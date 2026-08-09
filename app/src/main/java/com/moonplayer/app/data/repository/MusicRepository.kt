@@ -64,7 +64,9 @@ class MusicRepository(
             )
             val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
             try {
-                context.contentResolver.query(collection, projection, selection, null, null)?.use { cursor ->
+                context.contentResolver.query(
+                    collection, projection, selection, null, null
+                )?.use { cursor ->
                     val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
                     val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
                     val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
@@ -116,26 +118,34 @@ class MusicRepository(
                 if (songs.isNotEmpty()) {
                     songDao.insertAll(songs)
                 }
-                Unit
             } catch (e: Exception) {
                 Log.e("MusicRepository", "Scan failed", e)
             }
         }
     }
 
-    suspend fun setFavorite(id: Long, favorite: Boolean) = songDao.setFavorite(id, favorite)
-    suspend fun createPlaylist(name: String): Long = playlistDao.insert(Playlist(name = name))
-    suspend fun renamePlaylist(playlist: Playlist) = playlistDao.update(playlist)
+    suspend fun setFavorite(id: Long, favorite: Boolean) {
+        songDao.setFavorite(id, favorite)
+    }
+
+    suspend fun createPlaylist(name: String): Long {
+        return playlistDao.insert(Playlist(name = name))
+    }
+
+    suspend fun renamePlaylist(playlist: Playlist) {
+        playlistDao.update(playlist)
+    }
+
     suspend fun deletePlaylist(playlist: Playlist) {
         playlistDao.clearSongs(playlist.id)
         playlistDao.delete(playlist)
     }
-    suspend fun addToPlaylist(playlistId: Long, songId: Long) =
+
+    suspend fun addToPlaylist(playlistId: Long, songId: Long) {
         playlistDao.addSong(PlaylistSong(playlistId, songId))
-    suspend fun removeFromPlaylist(playlistId: Long, songId: Long) =
+    }
+
+    suspend fun removeFromPlaylist(playlistId: Long, songId: Long) {
         playlistDao.removeSong(playlistId, songId)
-<<<<<<< HEAD
+    }
 }
-=======
-}
->>>>>>> efb1d1f (Update MoonPlayer)
