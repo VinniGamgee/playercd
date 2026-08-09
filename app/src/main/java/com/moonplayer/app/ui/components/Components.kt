@@ -15,6 +15,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.moonplayer.app.data.model.Song
@@ -24,11 +25,13 @@ fun MiniPlayer(
     song: Song,
     isPlaying: Boolean,
     onPlayPause: () -> Unit,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onNext: () -> Unit = {}
 ) {
     Surface(
-        tonalElevation = 3.dp,
-        shadowElevation = 4.dp,
+        tonalElevation = 6.dp,
+        shadowElevation = 8.dp,
+        color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
@@ -36,29 +39,47 @@ fun MiniPlayer(
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            AlbumArt(song = song, size = 48.dp)
+            AlbumArt(song = song, size = 52.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(song.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(song.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    song.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    song.artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
             IconButton(onClick = onPlayPause) {
-                Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (isPlaying) "Pausar" else "Reproduzir")
+                Icon(
+                    if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    if (isPlaying) "Pausar" else "Reproduzir",
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+            IconButton(onClick = onNext) {
+                Icon(Icons.Filled.SkipNext, "Próxima", modifier = Modifier.size(28.dp))
             }
         }
     }
 }
 
 @Composable
-fun AlbumArt(song: Song, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
+fun AlbumArt(song: Song, size: Dp, modifier: Modifier = Modifier, corner: Dp = 10.dp) {
     val albumArtUri = "content://media/external/audio/albumart/${song.albumId}"
     Box(
         modifier
             .size(size)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(corner))
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center
     ) {
@@ -71,7 +92,8 @@ fun AlbumArt(song: Song, size: androidx.compose.ui.unit.Dp, modifier: Modifier =
         Icon(
             Icons.Filled.MusicNote,
             null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+            modifier = Modifier.size(size * 0.35f)
         )
     }
 }
@@ -81,20 +103,31 @@ fun SongListItem(
     song: Song,
     onClick: () -> Unit,
     onFavorite: (() -> Unit)? = null,
-    onMore: (() -> Unit)? = null
+    onMore: (() -> Unit)? = null,
+    subtitle: String? = null
 ) {
     ListItem(
-        headlineContent = { Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        supportingContent = { Text("${song.artist} • ${song.album}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        leadingContent = { AlbumArt(song, 48.dp) },
+        headlineContent = {
+            Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        },
+        supportingContent = {
+            Text(
+                subtitle ?: "${song.artist} • ${song.album}",
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        leadingContent = { AlbumArt(song, 50.dp) },
         trailingContent = {
-            Row {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 if (onFavorite != null) {
                     IconButton(onClick = onFavorite) {
                         Icon(
-                            if (song.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                            if (song.isFavorite) Icons.Filled.Favorite
+                            else Icons.Outlined.FavoriteBorder,
                             "Favorito",
-                            tint = if (song.isFavorite) Color(0xFFE91E63) else LocalContentColor.current
+                            tint = if (song.isFavorite) Color(0xFFE91E63)
+                            else LocalContentColor.current
                         )
                     }
                 }
@@ -110,6 +143,7 @@ fun SongListItem(
 }
 
 fun formatDuration(ms: Long): String {
+    if (ms <= 0) return "0:00"
     val totalSec = (ms / 1000).toInt()
     val min = totalSec / 60
     val sec = totalSec % 60

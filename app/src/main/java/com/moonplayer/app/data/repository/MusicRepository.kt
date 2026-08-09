@@ -134,4 +134,8 @@ class MusicRepository(
         playlistDao.addSong(PlaylistSong(playlistId, songId))
     suspend fun removeFromPlaylist(playlistId: Long, songId: Long) =
         playlistDao.removeSong(playlistId, songId)
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> efb1d1f (Update MoonPlayer)

@@ -9,9 +9,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.moonplayer.app.data.model.Song
+import com.moonplayer.app.data.preferences.ThemeMode
 import com.moonplayer.app.ui.components.SongListItem
 import com.moonplayer.app.ui.components.formatDuration
 import com.moonplayer.app.ui.components.formatSize
@@ -27,28 +30,39 @@ fun QueueScreen(vm: MainViewModel, onBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = { Text("Fila (${queue.size})") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) } },
+                navigationIcon = {
+                    IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) }
+                },
                 actions = {
-                    IconButton(onClick = { vm.player.clearQueue() }) {
-                        Icon(Icons.Filled.ClearAll, "Limpar")
+                    if (queue.isNotEmpty()) {
+                        IconButton(onClick = { vm.player.clearQueue() }) {
+                            Icon(Icons.Filled.ClearAll, "Limpar")
+                        }
                     }
                 }
             )
         }
     ) { padding ->
         if (queue.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = androidx.compose.ui.Alignment.Center) {
-                Text("Fila vazia")
-            }
+            Box(
+                Modifier.fillMaxSize().padding(padding),
+                contentAlignment = Alignment.Center
+            ) { Text("Fila vazia") }
         } else {
             LazyColumn(Modifier.padding(padding)) {
                 itemsIndexed(queue, key = { _, s -> s.id }) { index, song ->
                     val isCurrent = song.id == current?.id
                     ListItem(
                         headlineContent = {
-                            Text(song.title, color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                            Text(
+                                song.title,
+                                color = if (isCurrent) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         },
-                        supportingContent = { Text(song.artist) },
+                        supportingContent = { Text(song.artist, maxLines = 1) },
                         trailingContent = {
                             IconButton(onClick = { vm.player.removeFromQueue(index) }) {
                                 Icon(Icons.Filled.Close, "Remover")
@@ -76,22 +90,23 @@ fun SearchScreen(vm: MainViewModel, onSongClick: (Song, List<Song>) -> Unit) {
             placeholder = { Text("Pesquisar músicas, artistas…") },
             leadingIcon = { Icon(Icons.Filled.Search, null) },
             trailingIcon = {
-                if (query.isNotEmpty()) IconButton(onClick = { vm.setSearchQuery("") }) {
-                    Icon(Icons.Filled.Clear, null)
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = { vm.setSearchQuery("") }) {
+                        Icon(Icons.Filled.Clear, null)
+                    }
                 }
             },
-            singleLine = true
+            singleLine = true,
+            shape = MaterialTheme.shapes.large
         )
-        if (query.isBlank()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+        when {
+            query.isBlank() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("Digite para pesquisar", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-        } else if (results.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+            results.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("Nenhum resultado")
             }
-        } else {
-            LazyColumn {
+            else -> LazyColumn {
                 items(results, key = { it.id }) { song ->
                     SongListItem(song = song, onClick = { onSongClick(song, results) })
                 }
@@ -104,36 +119,146 @@ fun SearchScreen(vm: MainViewModel, onSongClick: (Song, List<Song>) -> Unit) {
 @Composable
 fun SettingsScreen(vm: MainViewModel) {
     val isScanning by vm.isScanning.collectAsState()
+    val themeMode by vm.themeMode.collectAsState()
+    val gapless by vm.gapless.collectAsState()
+    val crossfade by vm.crossfade.collectAsState()
+    val autoPlay by vm.autoPlay.collectAsState()
+    val songCount by vm.songs.collectAsState()
+
+    var showThemeDialog by remember { mutableStateOf(false) }
+
     Scaffold(topBar = { TopAppBar(title = { Text("Configurações") }) }) { padding ->
         LazyColumn(Modifier.padding(padding)) {
             item {
-                Text("Interface", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.primary)
-                ListItem(headlineContent = { Text("Tema") }, supportingContent = { Text("Seguir sistema") }, leadingContent = { Icon(Icons.Filled.DarkMode, null) })
-            }
-            item {
-                Text("Reprodução", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.primary)
-                ListItem(headlineContent = { Text("Gapless") }, supportingContent = { Text("Quando suportado") }, leadingContent = { Icon(Icons.Filled.GraphicEq, null) })
-                ListItem(headlineContent = { Text("Crossfade") }, supportingContent = { Text("Desativado") }, leadingContent = { Icon(Icons.Filled.Tune, null) })
-            }
-            item {
-                Text("Áudio", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.primary)
-                ListItem(headlineContent = { Text("Equalizador") }, supportingContent = { Text("Em breve") }, leadingContent = { Icon(Icons.Filled.Equalizer, null) })
-            }
-            item {
-                Text("Biblioteca", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.primary)
+                SectionHeader("Interface")
                 ListItem(
-                    headlineContent = { Text("Atualizar biblioteca") },
-                    supportingContent = { Text(if (isScanning) "Escaneando…" else "Escanear músicas do dispositivo") },
-                    leadingContent = { Icon(Icons.Filled.Refresh, null) },
-                    modifier = Modifier.clickable { vm.scanLibrary() }
+                    headlineContent = { Text("Tema") },
+                    supportingContent = {
+                        Text(
+                            when (themeMode) {
+                                ThemeMode.SYSTEM -> "Seguir sistema"
+                                ThemeMode.LIGHT -> "Claro"
+                                ThemeMode.DARK -> "Escuro"
+                            }
+                        )
+                    },
+                    leadingContent = { Icon(Icons.Filled.DarkMode, null) },
+                    trailingContent = { Icon(Icons.Filled.ChevronRight, null) },
+                    modifier = Modifier.clickable { showThemeDialog = true }
                 )
             }
             item {
-                Text("Sobre", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.primary)
-                ListItem(headlineContent = { Text("MoonPlayer") }, supportingContent = { Text("Versão 1.0.0") }, leadingContent = { Icon(Icons.Filled.Info, null) })
+                SectionHeader("Reprodução")
+                ListItem(
+                    headlineContent = { Text("Reprodução automática") },
+                    supportingContent = { Text("Continuar ao abrir o app") },
+                    leadingContent = { Icon(Icons.Filled.PlayCircle, null) },
+                    trailingContent = {
+                        Switch(checked = autoPlay, onCheckedChange = { vm.setAutoPlay(it) })
+                    }
+                )
+                ListItem(
+                    headlineContent = { Text("Gapless") },
+                    supportingContent = { Text("Transição sem silêncio") },
+                    leadingContent = { Icon(Icons.Filled.GraphicEq, null) },
+                    trailingContent = {
+                        Switch(checked = gapless, onCheckedChange = { vm.setGapless(it) })
+                    }
+                )
+                ListItem(
+                    headlineContent = { Text("Crossfade") },
+                    supportingContent = { Text("Sobrepor faixas na troca") },
+                    leadingContent = { Icon(Icons.Filled.Tune, null) },
+                    trailingContent = {
+                        Switch(checked = crossfade, onCheckedChange = { vm.setCrossfade(it) })
+                    }
+                )
+            }
+            item {
+                SectionHeader("Áudio")
+                ListItem(
+                    headlineContent = { Text("Equalizador") },
+                    supportingContent = { Text("Use o equalizador do sistema") },
+                    leadingContent = { Icon(Icons.Filled.Equalizer, null) },
+                    modifier = Modifier.clickable {
+                        // Opens system EQ if available via intent from host activity in future
+                    }
+                )
+            }
+            item {
+                SectionHeader("Biblioteca")
+                ListItem(
+                    headlineContent = { Text("Atualizar biblioteca") },
+                    supportingContent = {
+                        Text(
+                            if (isScanning) "Escaneando…"
+                            else "${songCount.size} músicas no dispositivo"
+                        )
+                    },
+                    leadingContent = {
+                        if (isScanning) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                        else Icon(Icons.Filled.Refresh, null)
+                    },
+                    modifier = Modifier.clickable(enabled = !isScanning) { vm.scanLibrary() }
+                )
+            }
+            item {
+                SectionHeader("Sobre")
+                ListItem(
+                    headlineContent = { Text("MoonPlayer") },
+                    supportingContent = { Text("Versão 1.1.0 • Kotlin + Compose + Media3") },
+                    leadingContent = { Icon(Icons.Filled.Info, null) }
+                )
             }
         }
     }
+
+    if (showThemeDialog) {
+        AlertDialog(
+            onDismissRequest = { showThemeDialog = false },
+            title = { Text("Tema") },
+            text = {
+                Column {
+                    ThemeOption("Seguir sistema", themeMode == ThemeMode.SYSTEM) {
+                        vm.setTheme(ThemeMode.SYSTEM)
+                        showThemeDialog = false
+                    }
+                    ThemeOption("Claro", themeMode == ThemeMode.LIGHT) {
+                        vm.setTheme(ThemeMode.LIGHT)
+                        showThemeDialog = false
+                    }
+                    ThemeOption("Escuro", themeMode == ThemeMode.DARK) {
+                        vm.setTheme(ThemeMode.DARK)
+                        showThemeDialog = false
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showThemeDialog = false }) { Text("Fechar") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun SectionHeader(title: String) {
+    Text(
+        title,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 16.dp, top = 20.dp, bottom = 4.dp)
+    )
+}
+
+@Composable
+private fun ThemeOption(label: String, selected: Boolean, onClick: () -> Unit) {
+    ListItem(
+        headlineContent = { Text(label) },
+        trailingContent = {
+            if (selected) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary)
+        },
+        modifier = Modifier.clickable(onClick = onClick)
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -146,12 +271,14 @@ fun SongInfoScreen(vm: MainViewModel, songId: Long, onBack: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = { Text("Informações") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) } }
+                navigationIcon = {
+                    IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) }
+                }
             )
         }
     ) { padding ->
         if (song == null) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = androidx.compose.ui.Alignment.Center) {
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Text("Música não encontrada")
             }
         } else {
@@ -172,7 +299,7 @@ fun SongInfoScreen(vm: MainViewModel, songId: Long, onBack: () -> Unit) {
 
 @Composable
 private fun InfoRow(label: String, value: String) {
-    Column(Modifier.padding(vertical = 8.dp)) {
+    Column(Modifier.padding(vertical = 10.dp)) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(value, style = MaterialTheme.typography.bodyLarge)
     }
@@ -180,12 +307,29 @@ private fun InfoRow(label: String, value: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ArtistDetailScreen(vm: MainViewModel, artist: String, onBack: () -> Unit, onSongClick: (Song, List<Song>) -> Unit) {
+fun ArtistDetailScreen(
+    vm: MainViewModel,
+    artist: String,
+    onBack: () -> Unit,
+    onSongClick: (Song, List<Song>) -> Unit
+) {
     val songs by vm.songs.collectAsState()
-    val list = songs.filter { it.artist == artist }
+    val list = remember(songs, artist) { songs.filter { it.artist == artist } }
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text(artist) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) } })
+            TopAppBar(
+                title = { Text(artist) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) }
+                },
+                actions = {
+                    if (list.isNotEmpty()) {
+                        IconButton(onClick = { vm.playPlaylist(list) }) {
+                            Icon(Icons.Filled.PlayArrow, "Tocar tudo")
+                        }
+                    }
+                }
+            )
         }
     ) { padding ->
         LazyColumn(Modifier.padding(padding)) {
@@ -198,13 +342,32 @@ fun ArtistDetailScreen(vm: MainViewModel, artist: String, onBack: () -> Unit, on
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AlbumDetailScreen(vm: MainViewModel, albumId: Long, onBack: () -> Unit, onSongClick: (Song, List<Song>) -> Unit) {
+fun AlbumDetailScreen(
+    vm: MainViewModel,
+    albumId: Long,
+    onBack: () -> Unit,
+    onSongClick: (Song, List<Song>) -> Unit
+) {
     val songs by vm.songs.collectAsState()
-    val list = songs.filter { it.albumId == albumId }.sortedBy { it.trackNumber }
+    val list = remember(songs, albumId) {
+        songs.filter { it.albumId == albumId }.sortedBy { it.trackNumber }
+    }
     val albumName = list.firstOrNull()?.album ?: "Álbum"
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text(albumName) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) } })
+            TopAppBar(
+                title = { Text(albumName) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) }
+                },
+                actions = {
+                    if (list.isNotEmpty()) {
+                        IconButton(onClick = { vm.playPlaylist(list) }) {
+                            Icon(Icons.Filled.PlayArrow, "Tocar tudo")
+                        }
+                    }
+                }
+            )
         }
     ) { padding ->
         LazyColumn(Modifier.padding(padding)) {
@@ -217,7 +380,12 @@ fun AlbumDetailScreen(vm: MainViewModel, albumId: Long, onBack: () -> Unit, onSo
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PlaylistDetailScreen(vm: MainViewModel, playlistId: Long, onBack: () -> Unit, onSongClick: (Song, List<Song>) -> Unit) {
+fun PlaylistDetailScreen(
+    vm: MainViewModel,
+    playlistId: Long,
+    onBack: () -> Unit,
+    onSongClick: (Song, List<Song>) -> Unit
+) {
     val list by vm.getPlaylistSongs(playlistId).collectAsState(initial = emptyList())
     val playlists by vm.playlists.collectAsState()
     val name = playlists.find { it.id == playlistId }?.name ?: "Playlist"
@@ -225,7 +393,9 @@ fun PlaylistDetailScreen(vm: MainViewModel, playlistId: Long, onBack: () -> Unit
         topBar = {
             TopAppBar(
                 title = { Text(name) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) } },
+                navigationIcon = {
+                    IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) }
+                },
                 actions = {
                     if (list.isNotEmpty()) {
                         IconButton(onClick = { vm.playPlaylist(list) }) {
@@ -237,11 +407,75 @@ fun PlaylistDetailScreen(vm: MainViewModel, playlistId: Long, onBack: () -> Unit
         }
     ) { padding ->
         if (list.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = androidx.compose.ui.Alignment.Center) {
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Text("Playlist vazia")
             }
         } else {
             LazyColumn(Modifier.padding(padding)) {
+                items(list, key = { it.id }) { song ->
+                    SongListItem(song = song, onClick = { onSongClick(song, list) })
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FolderDetailScreen(
+    vm: MainViewModel,
+    folderPath: String,
+    onBack: () -> Unit,
+    onSongClick: (Song, List<Song>) -> Unit
+) {
+    val allSongs by vm.songs.collectAsState()
+    val list = remember(folderPath, allSongs) {
+        allSongs.filter { it.path.startsWith(folderPath) }
+    }
+    val folderName = folderPath.substringAfterLast('/')
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(folderName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            folderPath,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) }
+                },
+                actions = {
+                    if (list.isNotEmpty()) {
+                        IconButton(onClick = { vm.playPlaylist(list) }) {
+                            Icon(Icons.Filled.PlayArrow, "Tocar pasta")
+                        }
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        if (list.isEmpty()) {
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                Text("Nenhuma música nesta pasta")
+            }
+        } else {
+            LazyColumn(Modifier.padding(padding)) {
+                item {
+                    Text(
+                        "${list.size} músicas",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
                 items(list, key = { it.id }) { song ->
                     SongListItem(song = song, onClick = { onSongClick(song, list) })
                 }

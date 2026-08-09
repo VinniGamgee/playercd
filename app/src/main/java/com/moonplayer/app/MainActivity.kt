@@ -12,6 +12,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.*
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.moonplayer.app.data.preferences.ThemeMode
 import com.moonplayer.app.ui.navigation.MoonNavHost
 import com.moonplayer.app.ui.theme.MoonPlayerTheme
 import com.moonplayer.app.viewmodel.MainViewModel
@@ -19,20 +20,22 @@ import com.moonplayer.app.viewmodel.MainViewModel
 class MainActivity : ComponentActivity() {
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { results ->
-        if (results.values.any { it }) {
-            // Permission granted – scan will be triggered from UI
-        }
-    }
+    ) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         requestPermissions()
         setContent {
-            val darkTheme = isSystemInDarkTheme()
-            MoonPlayerTheme(darkTheme = darkTheme) {
-                val vm: MainViewModel = viewModel()
+            val vm: MainViewModel = viewModel()
+            val themeMode by vm.themeMode.collectAsState()
+            val systemDark = isSystemInDarkTheme()
+            val dark = when (themeMode) {
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+                ThemeMode.SYSTEM -> systemDark
+            }
+            MoonPlayerTheme(darkTheme = dark) {
                 MoonNavHost(vm)
             }
         }

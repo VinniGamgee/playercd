@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.moonplayer.app.data.model.Song
 import com.moonplayer.app.ui.components.SongListItem
@@ -24,10 +25,10 @@ import kotlinx.coroutines.launch
 fun LibraryScreen(
     vm: MainViewModel,
     onSongClick: (Song, List<Song>) -> Unit,
-    onOpenPlayer: () -> Unit,
     onArtistClick: (String) -> Unit,
     onAlbumClick: (Long) -> Unit,
     onPlaylistClick: (Long) -> Unit,
+    onFolderClick: (String) -> Unit,
     onSongInfo: (Long) -> Unit
 ) {
     val tabs = listOf("Músicas", "Artistas", "Álbuns", "Pastas", "Playlists", "Favoritos")
@@ -43,15 +44,33 @@ fun LibraryScreen(
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text("MoonPlayer") },
+            title = {
+                Column {
+                    Text("MoonPlayer")
+                    if (songs.isNotEmpty()) {
+                        Text(
+                            "${songs.size} músicas",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
             actions = {
                 IconButton(onClick = { vm.scanLibrary() }) {
-                    if (isScanning) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                    else Icon(Icons.Filled.Refresh, "Atualizar")
+                    if (isScanning) {
+                        CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Filled.Refresh, "Atualizar biblioteca")
+                    }
                 }
             }
         )
-        ScrollableTabRow(selectedTabIndex = pagerState.currentPage, edgePadding = 8.dp) {
+        ScrollableTabRow(
+            selectedTabIndex = pagerState.currentPage,
+            edgePadding = 8.dp,
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
             tabs.forEachIndexed { i, title ->
                 Tab(
                     selected = pagerState.currentPage == i,
@@ -68,9 +87,13 @@ fun LibraryScreen(
                     else LazyColumn {
                         items(artists, key = { it.name }) { a ->
                             ListItem(
-                                headlineContent = { Text(a.name) },
-                                supportingContent = { Text("${a.songCount} músicas • ${a.albumCount} álbuns") },
-                                leadingContent = { Icon(Icons.Filled.Person, null) },
+                                headlineContent = { Text(a.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                supportingContent = {
+                                    Text("${a.songCount} músicas • ${a.albumCount} álbuns")
+                                },
+                                leadingContent = {
+                                    Icon(Icons.Filled.Person, null, tint = MaterialTheme.colorScheme.primary)
+                                },
                                 modifier = Modifier.clickable { onArtistClick(a.name) }
                             )
                         }
@@ -81,9 +104,13 @@ fun LibraryScreen(
                     else LazyColumn {
                         items(albums, key = { it.id }) { a ->
                             ListItem(
-                                headlineContent = { Text(a.name) },
-                                supportingContent = { Text("${a.artist} • ${a.songCount} músicas") },
-                                leadingContent = { Icon(Icons.Filled.Album, null) },
+                                headlineContent = { Text(a.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                supportingContent = {
+                                    Text("${a.artist} • ${a.songCount} músicas")
+                                },
+                                leadingContent = {
+                                    Icon(Icons.Filled.Album, null, tint = MaterialTheme.colorScheme.primary)
+                                },
                                 modifier = Modifier.clickable { onAlbumClick(a.id) }
                             )
                         }
@@ -94,9 +121,17 @@ fun LibraryScreen(
                     else LazyColumn {
                         items(folders, key = { it.path }) { f ->
                             ListItem(
-                                headlineContent = { Text(f.name) },
-                                supportingContent = { Text("${f.songCount} músicas") },
-                                leadingContent = { Icon(Icons.Filled.Folder, null) }
+                                headlineContent = { Text(f.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                supportingContent = {
+                                    Text("${f.songCount} músicas • ${f.path}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                },
+                                leadingContent = {
+                                    Icon(Icons.Filled.Folder, null, tint = MaterialTheme.colorScheme.primary)
+                                },
+                                trailingContent = {
+                                    Icon(Icons.Filled.ChevronRight, null)
+                                },
+                                modifier = Modifier.clickable { onFolderClick(f.path) }
                             )
                         }
                     }
@@ -104,7 +139,10 @@ fun LibraryScreen(
                 4 -> {
                     var showCreate by remember { mutableStateOf(false) }
                     Column {
-                        TextButton(onClick = { showCreate = true }, modifier = Modifier.padding(16.dp)) {
+                        TextButton(
+                            onClick = { showCreate = true },
+                            modifier = Modifier.padding(16.dp)
+                        ) {
                             Icon(Icons.Filled.Add, null)
                             Spacer(Modifier.width(8.dp))
                             Text("Nova playlist")
@@ -114,7 +152,10 @@ fun LibraryScreen(
                             items(playlists, key = { it.id }) { p ->
                                 ListItem(
                                     headlineContent = { Text(p.name) },
-                                    leadingContent = { Icon(Icons.Filled.QueueMusic, null) },
+                                    leadingContent = {
+                                        Icon(Icons.Filled.QueueMusic, null, tint = MaterialTheme.colorScheme.primary)
+                                    },
+                                    trailingContent = { Icon(Icons.Filled.ChevronRight, null) },
                                     modifier = Modifier.clickable { onPlaylistClick(p.id) }
                                 )
                             }
@@ -160,15 +201,18 @@ private fun SongList(
     onFavorite: (Song) -> Unit,
     onSongInfo: (Long) -> Unit
 ) {
-    if (songs.isEmpty()) EmptyState("Nenhuma música encontrada\nToque em ↻ para escanear")
-    else LazyColumn {
-        items(songs, key = { it.id }) { song ->
-            SongListItem(
-                song = song,
-                onClick = { onSongClick(song, songs) },
-                onFavorite = { onFavorite(song) },
-                onMore = { onSongInfo(song.id) }
-            )
+    if (songs.isEmpty()) {
+        EmptyState("Nenhuma música encontrada\nToque em ↻ para escanear")
+    } else {
+        LazyColumn {
+            items(songs, key = { it.id }) { song ->
+                SongListItem(
+                    song = song,
+                    onClick = { onSongClick(song, songs) },
+                    onFavorite = { onFavorite(song) },
+                    onMore = { onSongInfo(song.id) }
+                )
+            }
         }
     }
 }
