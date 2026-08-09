@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MoonPlayer</string>
+    <string name="library">Biblioteca</string>
+    <string name="songs">Músicas</string>
+    <string name="artists">Artistas</string>
+    <string name="albums">Álbuns</string>
+    <string name="folders">Pastas</string>
+    <string name="playlists">Playlists</string>
+    <string name="favorites">Favoritos</string>
+    <string name="queue">Fila</string>
+    <string name="settings">Configurações</string>
+    <string name="search">Pesquisar</string>
+    <string name="play">Reproduzir</string>
+    <string name="pause">Pausar</string>
+    <string name="next">Próxima</string>
+    <string name="previous">Anterior</string>
+    <string name="shuffle">Embaralhar</string>
+    <string name="repeat">Repetir</string>
+    <string name="no_songs">Nenhuma música encontrada</string>
+    <string name="permission_required">Permissão necessária para acessar músicas</string>
+    <string name="grant_permission">Conceder permissão</string>
+    <string name="empty_library">Biblioteca vazia</string>
+    <string name="scan_library">Atualizar biblioteca</string>
+    <string name="unknown_artist">Artista desconhecido</string>
+    <string name="unknown_album">Álbum desconhecido</string>
+    <string name="error_playback">Não foi possível reproduzir este arquivo</string>
+    <string name="create_playlist">Criar playlist</string>
+    <string name="add_to_playlist">Adicionar à playlist</string>
+    <string name="add_to_favorites">Favoritar</string>
+    <string name="remove_from_favorites">Remover dos favoritos</string>
+    <string name="theme">Tema</string>
+    <string name="theme_system">Sistema</string>
+    <string name="theme_light">Claro</string>
+    <string name="theme_dark">Escuro</string>
+    <string name="audio">Áudio</string>
+    <string name="equalizer">Equalizador</string>
+    <string name="playback">Reprodução</string>
+    <string name="interface_settings">Interface</string>
+    <string name="library_settings">Biblioteca</string>
+    <string name="now_playing">Tocando agora</string>
+    <string name="clear_queue">Limpar fila</string>
+    <string name="song_info">Informações</string>
+</resources>
