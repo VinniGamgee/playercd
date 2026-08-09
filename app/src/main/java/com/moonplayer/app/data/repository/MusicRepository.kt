@@ -109,8 +109,9 @@ class MusicRepository(
                 }
             }
             songDao.clearAll()
-            if (songs.isNotEmpty()) songDao.insertAll(songs)
-        } catch (e: Exception) {
+            if (songs.isNotEmpty()) {
+    songDao.insertAll(songs)
+}        } catch (e: Exception) {
             Log.e("MusicRepository", "Scan failed", e)
         }
     }
