@@ -118,6 +118,7 @@ class MusicRepository(
                 if (songs.isNotEmpty()) {
                     songDao.insertAll(songs)
                 }
+                Unit
             } catch (e: Exception) {
                 Log.e("MusicRepository", "Scan failed", e)
             }
