@@ -1,4 +1,3 @@
-@OptIn(ExperimentalFoundationApi::class)
 package com.moonplayer.app.ui.components
 
 import androidx.compose.foundation.background
