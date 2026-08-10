@@ -29,9 +29,9 @@ fun MiniPlayer(
     onNext: () -> Unit = {}
 ) {
     Surface(
-        tonalElevation = 6.dp,
-        shadowElevation = 8.dp,
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        tonalElevation = 5.dp,
+        shadowElevation = 6.dp,
+        color = MaterialTheme.colorScheme.surface,
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
@@ -39,7 +39,7 @@ fun MiniPlayer(
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 14.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             AlbumArt(song = song, size = 52.dp)
@@ -92,8 +92,8 @@ fun AlbumArt(song: Song, size: Dp, modifier: Modifier = Modifier, corner: Dp = 1
         Icon(
             Icons.Filled.MusicNote,
             null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-            modifier = Modifier.size(size * 0.35f)
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.24f),
+            modifier = Modifier.size(size * 0.30f)
         )
     }
 }
