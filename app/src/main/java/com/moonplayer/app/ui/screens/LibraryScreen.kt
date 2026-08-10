@@ -35,9 +35,19 @@ fun LibraryScreen(
     onFolderClick: (String) -> Unit,
     onSongInfo: (Long) -> Unit
 ) {
-    val tabs = listOf("Músicas", "Artistas", "Álbuns", "Pastas", "Playlists", "Favoritos")
+    val cfg by vm.appSettings.collectAsState()
+    val tabs = buildList {
+        add("Músicas")
+        if (cfg.showRecentlyPlayed) add("Recentes")
+        if (cfg.showArtists) add("Artistas")
+        if (cfg.showAlbums) add("Álbuns")
+        if (cfg.showFolders) add("Pastas")
+        if (cfg.showPlaylists) add("Playlists")
+        if (cfg.showFavorites) add("Favoritos")
+    }
     val pagerState = rememberPagerState(pageCount = { tabs.size })
     val scope = rememberCoroutineScope()
+    LaunchedEffect(tabs.size) { if (pagerState.currentPage >= tabs.size) pagerState.scrollToPage(0) }
     val songs by vm.songs.collectAsState()
     val artists by vm.artists.collectAsState()
     val albums by vm.albums.collectAsState()
@@ -135,10 +145,10 @@ fun LibraryScreen(
             state = pagerState,
             modifier = Modifier.weight(1f)
         ) { page ->
-            when (page) {
-                0 -> SongList(songs, onSongClick, { vm.toggleFavorite(it) }, onSongInfo)
-
-                1 -> {
+            when (tabs[page]) {
+                "Músicas" -> SongList(songs, onSongClick, { vm.toggleFavorite(it) }, onSongInfo, vm)
+                "Recentes" -> SongList(songs.sortedByDescending { it.dateAdded }, onSongClick, { vm.toggleFavorite(it) }, onSongInfo, vm)
+                "Artistas" -> {
                     if (artists.isEmpty()) {
                         EmptyState("Nenhum artista encontrado")
                     } else {
@@ -173,7 +183,7 @@ fun LibraryScreen(
                     }
                 }
 
-                2 -> {
+                "Álbuns" -> {
                     if (albums.isEmpty()) {
                         EmptyState("Nenhum álbum encontrado")
                     } else {
@@ -208,7 +218,7 @@ fun LibraryScreen(
                     }
                 }
 
-                3 -> {
+                "Pastas" -> {
                     if (folders.isEmpty()) {
                         EmptyState("Nenhuma pasta encontrada")
                     } else {
@@ -247,18 +257,13 @@ fun LibraryScreen(
                     }
                 }
 
-                4 -> PlaylistTab(
+                "Playlists" -> PlaylistTab(
                     playlists = playlists,
                     vm = vm,
                     onPlaylistClick = onPlaylistClick
                 )
 
-                5 -> SongList(
-                    favorites,
-                    onSongClick,
-                    { vm.toggleFavorite(it) },
-                    onSongInfo
-                )
+                "Favoritos" -> SongList(favorites, onSongClick, { vm.toggleFavorite(it) }, onSongInfo, vm)
             }
         }
     }
@@ -409,24 +414,85 @@ private fun SongList(
     songs: List<Song>,
     onSongClick: (Song, List<Song>) -> Unit,
     onFavorite: (Song) -> Unit,
-    onSongInfo: (Long) -> Unit
+    onSongInfo: (Long) -> Unit,
+    vm: MainViewModel
 ) {
+    var selected by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var showPlaylist by remember { mutableStateOf(false) }
+    val playlists by vm.playlists.collectAsState()
+
     if (songs.isEmpty()) {
         EmptyState("Nenhuma música encontrada\nToque em ↻ para escanear")
-    } else {
-        LazyColumn(
-            contentPadding = PaddingValues(vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(1.dp)
-        ) {
-            items(songs, key = { it.id }) { song ->
+        return
+    }
+
+    if (selected.isNotEmpty()) {
+        Surface(color = MaterialTheme.colorScheme.primaryContainer) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("${selected.size} selecionada(s)", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                TextButton(onClick = { showPlaylist = true }) {
+                    Icon(Icons.Filled.QueueMusic, null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Playlist")
+                }
+                TextButton(onClick = { selected = emptySet() }) { Text("Cancelar") }
+            }
+        }
+    }
+
+    LazyColumn(
+        contentPadding = PaddingValues(vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(1.dp)
+    ) {
+        items(songs, key = { it.id }) { song ->
+            val isSelected = song.id in selected
+            Surface(
+                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                else MaterialTheme.colorScheme.surface
+            ) {
                 SongListItem(
                     song = song,
-                    onClick = { onSongClick(song, songs) },
+                    onClick = {
+                        if (selected.isNotEmpty()) {
+                            selected = if (isSelected) selected - song.id else selected + song.id
+                        } else onSongClick(song, songs)
+                    },
                     onFavorite = { onFavorite(song) },
-                    onMore = { onSongInfo(song.id) }
+                    onMore = { onSongInfo(song.id) },
+                    onLongClick = { selected = if (isSelected) selected - song.id else selected + song.id }
                 )
             }
         }
+    }
+
+    if (showPlaylist) {
+        AlertDialog(
+            onDismissRequest = { showPlaylist = false },
+            title = { Text("Adicionar ${selected.size} música(s)") },
+            text = {
+                if (playlists.isEmpty()) {
+                    Text("Crie uma playlist primeiro.")
+                } else {
+                    Column {
+                        playlists.forEach { playlist ->
+                            ListItem(
+                                headlineContent = { Text(playlist.name) },
+                                leadingContent = { Icon(Icons.Filled.QueueMusic, null) },
+                                modifier = Modifier.clickable {
+                                    selected.forEach { vm.addToPlaylist(playlist.id, it) }
+                                    selected = emptySet()
+                                    showPlaylist = false
+                                }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showPlaylist = false }) { Text("Fechar") } }
+        )
     }
 }
 

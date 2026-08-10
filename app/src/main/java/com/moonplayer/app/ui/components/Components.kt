@@ -2,6 +2,7 @@ package com.moonplayer.app.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -104,7 +105,8 @@ fun SongListItem(
     onClick: () -> Unit,
     onFavorite: (() -> Unit)? = null,
     onMore: (() -> Unit)? = null,
-    subtitle: String? = null
+    subtitle: String? = null,
+    onLongClick: (() -> Unit)? = null
 ) {
     ListItem(
         headlineContent = {
@@ -138,7 +140,11 @@ fun SongListItem(
                 }
             }
         },
-        modifier = Modifier.clickable(onClick = onClick)
+        modifier = if (onLongClick != null) {
+            Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+        } else {
+            Modifier.clickable(onClick = onClick)
+        }
     )
 }
 

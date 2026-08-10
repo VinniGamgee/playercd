@@ -7,38 +7,77 @@ import android.util.Log
 import com.moonplayer.app.data.dao.PlaylistDao
 import com.moonplayer.app.data.dao.SongDao
 import com.moonplayer.app.data.model.*
+import com.moonplayer.app.data.preferences.AppSettings
+import com.moonplayer.app.data.preferences.LibrarySort
+import com.moonplayer.app.data.preferences.SettingsRepository
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.withContext
 
 class MusicRepository(
     private val context: Context,
     private val songDao: SongDao,
-    private val playlistDao: PlaylistDao
+    private val playlistDao: PlaylistDao,
+    private val settings: SettingsRepository
 ) {
-    fun getAllSongs(): Flow<List<Song>> = songDao.getAllSongs()
-    fun getFavorites(): Flow<List<Song>> = songDao.getFavorites()
-    fun search(query: String): Flow<List<Song>> = songDao.search(query)
-    fun getByArtist(artist: String): Flow<List<Song>> = songDao.getByArtist(artist)
-    fun getByAlbum(albumId: Long): Flow<List<Song>> = songDao.getByAlbum(albumId)
+    private fun applyLibraryRules(songs: List<Song>, cfg: AppSettings, includes: Set<String>, excludes: Set<String>): List<Song> {
+        fun normalize(p: String) = p.trimEnd('/')
+        fun under(path: String, root: String): Boolean {
+            val r = normalize(root)
+            return path == r || path.startsWith("$r/")
+        }
+        fun included(song: Song): Boolean {
+            if (includes.isEmpty()) return true
+            return includes.any { root ->
+                if (cfg.scanSubfolders) under(song.path, root)
+                else song.path.substringBeforeLast('/', "") == normalize(root)
+            }
+        }
+        fun excluded(song: Song) = excludes.any { under(song.path, it) }
+        val filtered = songs.filter { included(it) && !excluded(it) }
+        return when (cfg.librarySort) {
+            LibrarySort.TITLE -> filtered.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+            LibrarySort.ARTIST -> filtered.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.artist }.thenBy { it.album }.thenBy { it.trackNumber })
+            LibrarySort.ALBUM -> filtered.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.album }.thenBy { it.trackNumber }.thenBy { it.title })
+            LibrarySort.DATE_ADDED -> filtered.sortedByDescending { it.dateAdded }
+            LibrarySort.DURATION -> filtered.sortedByDescending { it.duration }
+        }
+    }
+
+    val allSongs: Flow<List<Song>> = combine(
+        songDao.getAllSongs(),
+        settings.settings,
+        settings.includePaths,
+        settings.excludePaths
+    ) { songs, cfg, includes, excludes -> applyLibraryRules(songs, cfg, includes, excludes) }
+
+    fun getAllSongs(): Flow<List<Song>> = allSongs
+    fun getFavorites(): Flow<List<Song>> = combine(allSongs, settings.settings) { songs, _ -> songs.filter { it.isFavorite } }
+    fun search(query: String): Flow<List<Song>> = allSongs.map { songs ->
+        songs.filter {
+            it.title.contains(query, true) || it.artist.contains(query, true) || it.album.contains(query, true)
+        }
+    }
+    fun getByArtist(artist: String): Flow<List<Song>> = allSongs.map { it.filter { s -> s.artist == artist } }
+    fun getByAlbum(albumId: Long): Flow<List<Song>> = allSongs.map { it.filter { s -> s.albumId == albumId } }
+    fun getByFolder(path: String): Flow<List<Song>> = allSongs.map { it.filter { s -> s.path.startsWith(path) } }
     fun getPlaylists(): Flow<List<Playlist>> = playlistDao.getAll()
     fun getPlaylistSongs(id: Long): Flow<List<Song>> = playlistDao.getSongs(id)
 
-    fun getArtists(): Flow<List<Artist>> = songDao.getAllSongs().map { songs ->
+    fun getArtists(): Flow<List<Artist>> = allSongs.map { songs ->
         songs.groupBy { it.artist }.map { (name, list) ->
             Artist(name, list.size, list.map { it.albumId }.distinct().size)
         }.sortedBy { it.name.lowercase() }
     }
 
-    fun getAlbums(): Flow<List<Album>> = songDao.getAllSongs().map { songs ->
+    fun getAlbums(): Flow<List<Album>> = allSongs.map { songs ->
         songs.groupBy { it.albumId }.map { (id, list) ->
             val first = list.first()
             Album(id, first.album, first.artist, list.size, first.year)
         }.sortedBy { it.name.lowercase() }
     }
 
-    fun getFolders(): Flow<List<Folder>> = songDao.getAllSongs().map { songs ->
+    fun getFolders(): Flow<List<Folder>> = allSongs.map { songs ->
         songs.groupBy { it.path.substringBeforeLast('/') }.map { (path, list) ->
             Folder(path, path.substringAfterLast('/'), list.size)
         }.sortedBy { it.name.lowercase() }
@@ -49,18 +88,10 @@ class MusicRepository(
             val songs = mutableListOf<Song>()
             val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
             val projection = arrayOf(
-                MediaStore.Audio.Media._ID,
-                MediaStore.Audio.Media.TITLE,
-                MediaStore.Audio.Media.ARTIST,
-                MediaStore.Audio.Media.ALBUM,
-                MediaStore.Audio.Media.ALBUM_ID,
-                MediaStore.Audio.Media.DURATION,
-                MediaStore.Audio.Media.DATA,
-                MediaStore.Audio.Media.SIZE,
-                MediaStore.Audio.Media.DATE_ADDED,
-                MediaStore.Audio.Media.YEAR,
-                MediaStore.Audio.Media.TRACK,
-                MediaStore.Audio.Media.MIME_TYPE
+                MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST,
+                MediaStore.Audio.Media.ALBUM, MediaStore.Audio.Media.ALBUM_ID, MediaStore.Audio.Media.DURATION,
+                MediaStore.Audio.Media.DATA, MediaStore.Audio.Media.SIZE, MediaStore.Audio.Media.DATE_ADDED,
+                MediaStore.Audio.Media.YEAR, MediaStore.Audio.Media.TRACK, MediaStore.Audio.Media.MIME_TYPE
             )
             val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
             try {
@@ -90,33 +121,19 @@ class MusicRepository(
                             mime.contains("wav") -> "WAV"
                             else -> mime.substringAfterLast('/').uppercase()
                         }
-                        songs.add(
-                            Song(
-                                id = id,
-                                title = cursor.getString(titleCol) ?: path.substringAfterLast('/'),
-                                artist = cursor.getString(artistCol) ?: "Artista desconhecido",
-                                album = cursor.getString(albumCol) ?: "Álbum desconhecido",
-                                albumId = cursor.getLong(albumIdCol),
-                                duration = cursor.getLong(durationCol),
-                                path = path,
-                                uri = ContentUris.withAppendedId(
-                                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                                    id
-                                ).toString(),
-                                size = cursor.getLong(sizeCol),
-                                dateAdded = cursor.getLong(dateCol),
-                                year = cursor.getInt(yearCol),
-                                trackNumber = cursor.getInt(trackCol) % 1000,
-                                format = format
-                            )
-                        )
+                        songs.add(Song(
+                            id = id, title = cursor.getString(titleCol) ?: path.substringAfterLast('/'),
+                            artist = cursor.getString(artistCol) ?: "Artista desconhecido",
+                            album = cursor.getString(albumCol) ?: "Álbum desconhecido",
+                            albumId = cursor.getLong(albumIdCol), duration = cursor.getLong(durationCol),
+                            path = path, uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id).toString(),
+                            size = cursor.getLong(sizeCol), dateAdded = cursor.getLong(dateCol),
+                            year = cursor.getInt(yearCol), trackNumber = cursor.getInt(trackCol) % 1000, format = format
+                        ))
                     }
                 }
                 songDao.clearAll()
-                if (songs.isNotEmpty()) {
-                    songDao.insertAll(songs)
-                }
-                Unit
+                if (songs.isNotEmpty()) songDao.insertAll(songs)
             } catch (e: Exception) {
                 Log.e("MusicRepository", "Scan failed", e)
             }
@@ -126,12 +143,7 @@ class MusicRepository(
     suspend fun setFavorite(id: Long, favorite: Boolean) = songDao.setFavorite(id, favorite)
     suspend fun createPlaylist(name: String): Long = playlistDao.insert(Playlist(name = name))
     suspend fun renamePlaylist(playlist: Playlist) = playlistDao.update(playlist)
-    suspend fun deletePlaylist(playlist: Playlist) {
-        playlistDao.clearSongs(playlist.id)
-        playlistDao.delete(playlist)
-    }
-    suspend fun addToPlaylist(playlistId: Long, songId: Long) =
-        playlistDao.addSong(PlaylistSong(playlistId, songId))
-    suspend fun removeFromPlaylist(playlistId: Long, songId: Long) =
-        playlistDao.removeSong(playlistId, songId)
+    suspend fun deletePlaylist(playlist: Playlist) { playlistDao.clearSongs(playlist.id); playlistDao.delete(playlist) }
+    suspend fun addToPlaylist(playlistId: Long, songId: Long) = playlistDao.addSong(PlaylistSong(playlistId, songId))
+    suspend fun removeFromPlaylist(playlistId: Long, songId: Long) = playlistDao.removeSong(playlistId, songId)
 }

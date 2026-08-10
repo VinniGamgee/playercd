@@ -1,5 +1,8 @@
 package com.moonplayer.app.ui.screens
 
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,10 +14,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.moonplayer.app.data.model.Song
-import com.moonplayer.app.data.preferences.ThemeMode
+import com.moonplayer.app.data.preferences.*
 import com.moonplayer.app.ui.components.SongListItem
 import com.moonplayer.app.ui.components.formatDuration
 import com.moonplayer.app.ui.components.formatSize
@@ -118,83 +122,83 @@ fun SearchScreen(vm: MainViewModel, onSongClick: (Song, List<Song>) -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(vm: MainViewModel) {
+    val context = LocalContext.current
+    val cfg by vm.appSettings.collectAsState()
+    val includes by vm.includePaths.collectAsState()
+    val excludes by vm.excludePaths.collectAsState()
+    val playlists by vm.playlists.collectAsState()
     val isScanning by vm.isScanning.collectAsState()
-    val themeMode by vm.themeMode.collectAsState()
-    val gapless by vm.gapless.collectAsState()
-    val crossfade by vm.crossfade.collectAsState()
-    val autoPlay by vm.autoPlay.collectAsState()
     val songCount by vm.songs.collectAsState()
 
-    var showThemeDialog by remember { mutableStateOf(false) }
+    var dialog by remember { mutableStateOf<String?>(null) }
+    var showReset by remember { mutableStateOf(false) }
+    var showCreatePlaylist by remember { mutableStateOf(false) }
+    var playlistName by remember { mutableStateOf("") }
+
+    val includePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        vm.addIncludePath(treeUriToPath(uri))
+    }
+    val excludePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        vm.addExcludePath(treeUriToPath(uri))
+    }
 
     Scaffold(topBar = { TopAppBar(title = { Text("Configurações") }) }) { padding ->
-        LazyColumn(Modifier.padding(padding)) {
+        LazyColumn(
+            Modifier.padding(padding),
+            contentPadding = PaddingValues(bottom = 32.dp)
+        ) {
             item {
-                SectionHeader("Interface")
-                ListItem(
-                    headlineContent = { Text("Tema") },
-                    supportingContent = {
-                        Text(
-                            when (themeMode) {
-                                ThemeMode.SYSTEM -> "Seguir sistema"
-                                ThemeMode.LIGHT -> "Claro"
-                                ThemeMode.DARK -> "Escuro"
-                            }
-                        )
-                    },
-                    leadingContent = { Icon(Icons.Filled.DarkMode, null) },
-                    trailingContent = { Icon(Icons.Filled.ChevronRight, null) },
-                    modifier = Modifier.clickable { showThemeDialog = true }
-                )
+                SectionHeader("Aparência")
+                SettingsChoice("Tema", when (cfg.theme) {
+                    ThemeMode.SYSTEM -> "Sistema"
+                    ThemeMode.LIGHT -> "Claro"
+                    ThemeMode.DARK -> "Escuro"
+                    ThemeMode.AMOLED -> "AMOLED"
+                }, Icons.Filled.DarkMode) { dialog = "theme" }
+                SettingsChoice("Cor de destaque", accentLabel(cfg.accent), Icons.Filled.Palette) { dialog = "accent" }
+                SettingsChoice("Densidade", if (cfg.density == UiDensity.COMPACT) "Compacta" else "Confortável", Icons.Filled.ViewCompact) { dialog = "density" }
+                SettingsChoice("Arredondamento", "${cfg.cornerRadius} dp", Icons.Filled.CropSquare) { dialog = "corner" }
+                SettingsSwitch("Mostrar capas", "Usar arte do álbum sempre que disponível", Icons.Filled.Image, cfg.showAlbumArt, vm::setShowArt)
             }
             item {
-                SectionHeader("Reprodução")
-                ListItem(
-                    headlineContent = { Text("Reprodução automática") },
-                    supportingContent = { Text("Continuar ao abrir o app") },
-                    leadingContent = { Icon(Icons.Filled.PlayCircle, null) },
-                    trailingContent = {
-                        Switch(checked = autoPlay, onCheckedChange = { vm.setAutoPlay(it) })
-                    }
-                )
-                ListItem(
-                    headlineContent = { Text("Gapless") },
-                    supportingContent = { Text("Transição sem silêncio") },
-                    leadingContent = { Icon(Icons.Filled.GraphicEq, null) },
-                    trailingContent = {
-                        Switch(checked = gapless, onCheckedChange = { vm.setGapless(it) })
-                    }
-                )
-                ListItem(
-                    headlineContent = { Text("Crossfade") },
-                    supportingContent = { Text("Sobrepor faixas na troca") },
-                    leadingContent = { Icon(Icons.Filled.Tune, null) },
-                    trailingContent = {
-                        Switch(checked = crossfade, onCheckedChange = { vm.setCrossfade(it) })
-                    }
-                )
-            }
-            item {
-                SectionHeader("Áudio")
-                ListItem(
-                    headlineContent = { Text("Equalizador") },
-                    supportingContent = { Text("Use o equalizador do sistema") },
-                    leadingContent = { Icon(Icons.Filled.Equalizer, null) },
-                    modifier = Modifier.clickable {
-                        // Opens system EQ if available via intent from host activity in future
-                    }
-                )
+                SectionHeader("Tela inicial")
+                SettingsSwitch("Tocadas recentemente", "Mostrar seção de músicas recentes", Icons.Filled.History, cfg.showRecentlyPlayed, vm::setHomeRecently)
+                SettingsSwitch("Favoritos", "Mostrar favoritos na tela inicial", Icons.Filled.Favorite, cfg.showFavorites, vm::setHomeFavorites)
+                SettingsSwitch("Playlists", "Mostrar suas playlists", Icons.Filled.QueueMusic, cfg.showPlaylists, vm::setHomePlaylists)
+                SettingsSwitch("Artistas", "Mostrar artistas", Icons.Filled.Person, cfg.showArtists, vm::setHomeArtists)
+                SettingsSwitch("Álbuns", "Mostrar álbuns", Icons.Filled.Album, cfg.showAlbums, vm::setHomeAlbums)
+                SettingsSwitch("Pastas", "Mostrar pastas", Icons.Filled.Folder, cfg.showFolders, vm::setHomeFolders)
             }
             item {
                 SectionHeader("Biblioteca")
+                SettingsChoice("Ordenação", sortLabel(cfg.librarySort), Icons.Filled.Sort) { dialog = "sort" }
+                SettingsSwitch("Escanear subpastas", "Inclui tudo dentro das pastas monitoradas", Icons.Filled.FolderOpen, cfg.scanSubfolders, vm::setScanSubfolders)
+                SettingsSwitch("Atualização automática", "Escanear automaticamente quando a biblioteca estiver vazia", Icons.Filled.Autorenew, cfg.autoScan, vm::setAutoScan)
+                SettingsChoice(
+                    "Pastas monitoradas",
+                    if (includes.isEmpty()) "Todo o armazenamento de músicas" else "${includes.size} pasta(s)",
+                    Icons.Filled.LibraryMusic
+                ) { dialog = "include" }
+                SettingsChoice(
+                    "Pastas ignoradas",
+                    if (excludes.isEmpty()) "Nenhuma" else "${excludes.size} pasta(s)",
+                    Icons.Filled.Block
+                ) { dialog = "exclude" }
                 ListItem(
                     headlineContent = { Text("Atualizar biblioteca") },
-                    supportingContent = {
-                        Text(
-                            if (isScanning) "Escaneando…"
-                            else "${songCount.size} músicas no dispositivo"
-                        )
-                    },
+                    supportingContent = { Text(if (isScanning) "Escaneando…" else "${songCount.size} músicas encontradas") },
                     leadingContent = {
                         if (isScanning) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
                         else Icon(Icons.Filled.Refresh, null)
@@ -203,40 +207,232 @@ fun SettingsScreen(vm: MainViewModel) {
                 )
             }
             item {
-                SectionHeader("Sobre")
+                SectionHeader("Reprodução")
+                SettingsSwitch("Reprodução automática", "Iniciar reprodução quando uma fila for preparada", Icons.Filled.PlayCircle, cfg.autoPlay, vm::setAutoPlay)
+                SettingsSwitch("Retomar posição", "Continuar a faixa a partir da última posição (preparação para persistência)", Icons.Filled.RestartAlt, cfg.resumePlayback, vm::setResume)
+                SettingsSwitch("Gapless", "Evita pausas entre faixas quando suportado pelo decoder", Icons.Filled.GraphicEq, cfg.gapless, vm::setGapless)
+                SettingsSwitch("Fade de transição", "Suaviza a entrada da próxima faixa", Icons.Filled.Tune, cfg.crossfade, vm::setCrossfade)
+                if (cfg.crossfade) {
+                    ListItem(
+                        headlineContent = { Text("Duração do fade") },
+                        supportingContent = { Text("${cfg.crossfadeMs} ms") },
+                        leadingContent = { Icon(Icons.Filled.Timer, null) },
+                        modifier = Modifier.clickable { dialog = "crossfade" }
+                    )
+                }
+                SettingsSwitch("Pausar ao remover o fone", "Usa o comportamento de áudio do Android", Icons.Filled.HeadsetOff, cfg.pauseOnNoisy, vm::setPauseNoisy)
+            }
+            item {
+                SectionHeader("Player")
+                SettingsSwitch("Mostrar informações técnicas", "Codec, formato e metadados quando disponíveis", Icons.Filled.Info, cfg.showCodecInfo, vm::setShowCodec)
+                ListItem(
+                    headlineContent = { Text("Gestos e controles") },
+                    supportingContent = { Text("Controles de reprodução ficam no Player e na notificação") },
+                    leadingContent = { Icon(Icons.Filled.TouchApp, null) }
+                )
+            }
+            item {
+                SectionHeader("Playlists")
+                ListItem(
+                    headlineContent = { Text("Nova playlist") },
+                    supportingContent = { Text("Crie uma playlist para organizar suas músicas") },
+                    leadingContent = { Icon(Icons.Filled.Add, null) },
+                    modifier = Modifier.clickable { showCreatePlaylist = true }
+                )
+                playlists.take(8).forEach { playlist ->
+                    ListItem(
+                        headlineContent = { Text(playlist.name) },
+                        supportingContent = { Text("Playlist • toque para abrir") },
+                        leadingContent = { Icon(Icons.Filled.QueueMusic, null) },
+                        trailingContent = {
+                            IconButton(onClick = { vm.deletePlaylist(playlist) }) {
+                                Icon(Icons.Filled.DeleteOutline, "Excluir")
+                            }
+                        }
+                    )
+                }
+            }
+            item {
+                SectionHeader("Avançado")
+                ListItem(
+                    headlineContent = { Text("Restaurar configurações") },
+                    supportingContent = { Text("Volta todas as preferências aos valores padrão") },
+                    leadingContent = { Icon(Icons.Filled.RestartAlt, null) },
+                    modifier = Modifier.clickable { showReset = true }
+                )
                 ListItem(
                     headlineContent = { Text("MoonPlayer") },
-                    supportingContent = { Text("Versão 1.1.0 • Kotlin + Compose + Media3") },
+                    supportingContent = { Text("Configurações 1.0 • Kotlin + Compose + Media3") },
                     leadingContent = { Icon(Icons.Filled.Info, null) }
                 )
             }
         }
     }
 
-    if (showThemeDialog) {
+    when (dialog) {
+        "theme" -> ChoiceDialog("Tema", listOf(
+            ThemeMode.SYSTEM to "Sistema", ThemeMode.LIGHT to "Claro", ThemeMode.DARK to "Escuro", ThemeMode.AMOLED to "AMOLED"
+        ), cfg.theme, { vm.setTheme(it) }) { dialog = null }
+        "accent" -> ChoiceDialog("Cor de destaque", AccentPreset.values().map { it to accentLabel(it) }, cfg.accent, { vm.setAccent(it) }) { dialog = null }
+        "density" -> ChoiceDialog("Densidade", listOf(UiDensity.COMFORTABLE to "Confortável", UiDensity.COMPACT to "Compacta"), cfg.density, { vm.setDensity(it) }) { dialog = null }
+        "sort" -> ChoiceDialog("Ordenar biblioteca", LibrarySort.values().map { it to sortLabel(it) }, cfg.librarySort, { vm.setLibrarySort(it) }) { dialog = null }
+        "corner" -> NumberDialog("Arredondamento", cfg.cornerRadius, 4, 28, "dp", { vm.setCornerRadius(it) }) { dialog = null }
+        "crossfade" -> NumberDialog("Duração do crossfade", cfg.crossfadeMs, 200, 3000, "ms", { vm.setCrossfadeMs(it) }) { dialog = null }
+        "include" -> FolderRulesDialog("Pastas monitoradas", includes, "Adicionar pasta") {
+            includePicker.launch(null)
+        } { path -> vm.removeIncludePath(path) } { dialog = null }
+        "exclude" -> FolderRulesDialog("Pastas ignoradas", excludes, "Ignorar pasta") {
+            excludePicker.launch(null)
+        } { path -> vm.removeExcludePath(path) } { dialog = null }
+    }
+
+    if (showCreatePlaylist) {
         AlertDialog(
-            onDismissRequest = { showThemeDialog = false },
-            title = { Text("Tema") },
-            text = {
-                Column {
-                    ThemeOption("Seguir sistema", themeMode == ThemeMode.SYSTEM) {
-                        vm.setTheme(ThemeMode.SYSTEM)
-                        showThemeDialog = false
-                    }
-                    ThemeOption("Claro", themeMode == ThemeMode.LIGHT) {
-                        vm.setTheme(ThemeMode.LIGHT)
-                        showThemeDialog = false
-                    }
-                    ThemeOption("Escuro", themeMode == ThemeMode.DARK) {
-                        vm.setTheme(ThemeMode.DARK)
-                        showThemeDialog = false
-                    }
-                }
-            },
+            onDismissRequest = { showCreatePlaylist = false; playlistName = "" },
+            title = { Text("Nova playlist") },
+            text = { OutlinedTextField(playlistName, { playlistName = it }, label = { Text("Nome") }, singleLine = true) },
             confirmButton = {
-                TextButton(onClick = { showThemeDialog = false }) { Text("Fechar") }
-            }
+                TextButton(onClick = {
+                    vm.createPlaylist(playlistName)
+                    showCreatePlaylist = false
+                    playlistName = ""
+                }) { Text("Criar") }
+            },
+            dismissButton = { TextButton(onClick = { showCreatePlaylist = false; playlistName = "" }) { Text("Cancelar") } }
         )
+    }
+
+    if (showReset) {
+        AlertDialog(
+            onDismissRequest = { showReset = false },
+            title = { Text("Restaurar configurações?") },
+            text = { Text("Isso apaga suas preferências de aparência, biblioteca e reprodução. Suas músicas e playlists permanecem intactas.") },
+            confirmButton = {
+                TextButton(onClick = { vm.resetSettings(); showReset = false }) { Text("Restaurar") }
+            },
+            dismissButton = { TextButton(onClick = { showReset = false }) { Text("Cancelar") } }
+        )
+    }
+}
+
+@Composable
+private fun SettingsChoice(title: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = { Text(value) },
+        leadingContent = { Icon(icon, null) },
+        trailingContent = { Icon(Icons.Filled.ChevronRight, null) },
+        modifier = Modifier.clickable(onClick = onClick)
+    )
+}
+
+@Composable
+private fun SettingsSwitch(title: String, subtitle: String, icon: androidx.compose.ui.graphics.vector.ImageVector, checked: Boolean, onChecked: (Boolean) -> Unit) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = { Text(subtitle) },
+        leadingContent = { Icon(icon, null) },
+        trailingContent = { Switch(checked, onCheckedChange = onChecked) }
+    )
+}
+
+@Composable
+private fun <T> ChoiceDialog(title: String, options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit, onClose: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text(title) },
+        text = {
+            Column {
+                options.forEach { (value, label) ->
+                    ListItem(
+                        headlineContent = { Text(label) },
+                        trailingContent = { if (value == selected) Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary) },
+                        modifier = Modifier.clickable { onSelect(value); onClose() }
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onClose) { Text("Fechar") } }
+    )
+}
+
+@Composable
+private fun NumberDialog(title: String, initial: Int, min: Int, max: Int, unit: String, onValue: (Int) -> Unit, onClose: () -> Unit) {
+    var value by remember(initial) { mutableFloatStateOf(initial.toFloat()) }
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text(title) },
+        text = {
+            Column {
+                Text("${value.toInt()} $unit", style = MaterialTheme.typography.titleMedium)
+                Slider(value, { value = it }, valueRange = min.toFloat()..max.toFloat(), steps = ((max - min) / 100).coerceAtLeast(1) - 1)
+            }
+        },
+        confirmButton = { TextButton(onClick = { onValue(value.toInt()); onClose() }) { Text("Aplicar") } },
+        dismissButton = { TextButton(onClick = onClose) { Text("Cancelar") } }
+    )
+}
+
+@Composable
+private fun FolderRulesDialog(
+    title: String,
+    paths: Set<String>,
+    addLabel: String,
+    onAdd: () -> Unit,
+    onRemove: (String) -> Unit,
+    onClose: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text(title) },
+        text = {
+            Column {
+                if (paths.isEmpty()) Text("Nenhuma pasta definida.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                paths.sorted().forEach { path ->
+                    ListItem(
+                        headlineContent = { Text(path, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                        trailingContent = {
+                            IconButton(onClick = { onRemove(path) }) { Icon(Icons.Filled.DeleteOutline, "Remover") }
+                        }
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                FilledTonalButton(onClick = onAdd, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.CreateNewFolder, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(addLabel)
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onClose) { Text("Fechar") } }
+    )
+}
+
+private fun accentLabel(v: AccentPreset) = when (v) {
+    AccentPreset.MOON -> "Moon • Azul celeste"
+    AccentPreset.PURPLE -> "Nebula • Roxo"
+    AccentPreset.GREEN -> "Forest • Verde"
+    AccentPreset.ORANGE -> "Solar • Laranja"
+    AccentPreset.PINK -> "Aurora • Rosa"
+    AccentPreset.RED -> "Crimson • Vermelho"
+}
+
+private fun sortLabel(v: LibrarySort) = when (v) {
+    LibrarySort.TITLE -> "Título"
+    LibrarySort.ARTIST -> "Artista"
+    LibrarySort.ALBUM -> "Álbum"
+    LibrarySort.DATE_ADDED -> "Data adicionada"
+    LibrarySort.DURATION -> "Duração"
+}
+
+private fun treeUriToPath(uri: android.net.Uri): String {
+    val docId = android.provider.DocumentsContract.getTreeDocumentId(uri)
+    val split = docId.split(":", limit = 2)
+    return if (split.size == 2 && split[0].equals("primary", true)) {
+        val root = android.os.Environment.getExternalStorageDirectory().absolutePath
+        if (split[1].isBlank()) root else "$root/${split[1]}"
+    } else {
+        uri.toString()
     }
 }
 
@@ -282,7 +478,20 @@ fun SongInfoScreen(vm: MainViewModel, songId: Long, onBack: () -> Unit) {
                 Text("Música não encontrada")
             }
         } else {
+            val playlists by vm.playlists.collectAsState()
+            var showPlaylistDialog by remember { mutableStateOf(false) }
             LazyColumn(Modifier.padding(padding).padding(16.dp)) {
+                item {
+                    FilledTonalButton(
+                        onClick = { showPlaylistDialog = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.QueueMusic, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Adicionar à playlist")
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
                 item { InfoRow("Título", song.title) }
                 item { InfoRow("Artista", song.artist) }
                 item { InfoRow("Álbum", song.album) }
@@ -292,6 +501,31 @@ fun SongInfoScreen(vm: MainViewModel, songId: Long, onBack: () -> Unit) {
                 if (song.year > 0) item { InfoRow("Ano", song.year.toString()) }
                 if (song.genre.isNotBlank()) item { InfoRow("Gênero", song.genre) }
                 item { InfoRow("Caminho", song.path) }
+            }
+            if (showPlaylistDialog) {
+                AlertDialog(
+                    onDismissRequest = { showPlaylistDialog = false },
+                    title = { Text("Adicionar à playlist") },
+                    text = {
+                        if (playlists.isEmpty()) {
+                            Text("Nenhuma playlist criada ainda.")
+                        } else {
+                            Column {
+                                playlists.forEach { playlist ->
+                                    ListItem(
+                                        headlineContent = { Text(playlist.name) },
+                                        leadingContent = { Icon(Icons.Filled.QueueMusic, null) },
+                                        modifier = Modifier.clickable {
+                                            vm.addToPlaylist(playlist.id, song.id)
+                                            showPlaylistDialog = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = { TextButton(onClick = { showPlaylistDialog = false }) { Text("Fechar") } }
+                )
             }
         }
     }
@@ -413,7 +647,7 @@ fun PlaylistDetailScreen(
         } else {
             LazyColumn(Modifier.padding(padding)) {
                 items(list, key = { it.id }) { song ->
-                    SongListItem(song = song, onClick = { onSongClick(song, list) })
+                    SongListItem(song = song, onClick = { onSongClick(song, list) }, onMore = { vm.removeFromPlaylist(playlistId, song.id) })
                 }
             }
         }
@@ -433,6 +667,8 @@ fun FolderDetailScreen(
         allSongs.filter { it.path.startsWith(folderPath) }
     }
     val folderName = folderPath.substringAfterLast('/')
+    val playlists by vm.playlists.collectAsState()
+    var showPlaylistDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -454,6 +690,9 @@ fun FolderDetailScreen(
                 },
                 actions = {
                     if (list.isNotEmpty()) {
+                        IconButton(onClick = { showPlaylistDialog = true }) {
+                            Icon(Icons.Filled.QueueMusic, "Adicionar à playlist")
+                        }
                         IconButton(onClick = { vm.playPlaylist(list) }) {
                             Icon(Icons.Filled.PlayArrow, "Tocar pasta")
                         }
@@ -482,4 +721,31 @@ fun FolderDetailScreen(
             }
         }
     }
+    if (showPlaylistDialog) {
+        AlertDialog(
+            onDismissRequest = { showPlaylistDialog = false },
+            title = { Text("Adicionar pasta à playlist") },
+            text = {
+                if (playlists.isEmpty()) {
+                    Text("Crie uma playlist primeiro.")
+                } else {
+                    Column {
+                        playlists.forEach { playlist ->
+                            ListItem(
+                                headlineContent = { Text(playlist.name) },
+                                supportingContent = { Text("${list.size} músicas serão adicionadas") },
+                                leadingContent = { Icon(Icons.Filled.QueueMusic, null) },
+                                modifier = Modifier.clickable {
+                                    list.forEach { vm.addToPlaylist(playlist.id, it.id) }
+                                    showPlaylistDialog = false
+                                }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showPlaylistDialog = false }) { Text("Fechar") } }
+        )
+    }
+
 }

@@ -28,14 +28,20 @@ class MainActivity : ComponentActivity() {
         requestPermissions()
         setContent {
             val vm: MainViewModel = viewModel()
-            val themeMode by vm.themeMode.collectAsState()
+            val appSettings by vm.appSettings.collectAsState()
             val systemDark = isSystemInDarkTheme()
-            val dark = when (themeMode) {
+            val dark = when (appSettings.theme) {
                 ThemeMode.LIGHT -> false
-                ThemeMode.DARK -> true
+                ThemeMode.DARK, ThemeMode.AMOLED -> true
                 ThemeMode.SYSTEM -> systemDark
             }
-            MoonPlayerTheme(darkTheme = dark) {
+            MoonPlayerTheme(
+                darkTheme = dark,
+                accentPreset = appSettings.accent,
+                density = appSettings.density,
+                cornerRadius = appSettings.cornerRadius,
+                amoled = appSettings.theme == ThemeMode.AMOLED
+            ) {
                 MoonNavHost(vm)
             }
         }
@@ -44,16 +50,12 @@ class MainActivity : ComponentActivity() {
     private fun requestPermissions() {
         val perms = mutableListOf<String>()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO)
-                != PackageManager.PERMISSION_GRANTED
-            ) perms.add(Manifest.permission.READ_MEDIA_AUDIO)
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED
-            ) perms.add(Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
-                != PackageManager.PERMISSION_GRANTED
-            ) perms.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) != PackageManager.PERMISSION_GRANTED)
+                perms.add(Manifest.permission.READ_MEDIA_AUDIO)
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+                perms.add(Manifest.permission.POST_NOTIFICATIONS)
+        } else if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            perms.add(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
         if (perms.isNotEmpty()) permissionLauncher.launch(perms.toTypedArray())
     }

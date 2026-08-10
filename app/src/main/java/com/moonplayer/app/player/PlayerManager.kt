@@ -13,6 +13,7 @@ import com.moonplayer.app.data.model.Song
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.*
 
 class PlayerManager(private val context: Context) {
     private var controllerFuture: ListenableFuture<MediaController>? = null
@@ -40,6 +41,14 @@ class PlayerManager(private val context: Context) {
     val repeatMode: StateFlow<Int> = _repeatMode.asStateFlow()
 
     private var songMap = mapOf<String, Song>()
+    private var transitionFadeEnabled = false
+    private var transitionFadeMs = 700
+    private val fadeScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    fun configureTransitionFade(enabled: Boolean, durationMs: Int) {
+        transitionFadeEnabled = enabled
+        transitionFadeMs = durationMs.coerceIn(200, 3000)
+    }
 
     fun connect() {
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
@@ -64,6 +73,19 @@ class PlayerManager(private val context: Context) {
                 _currentSong.value = songMap[id]
             }
             _duration.value = controller?.duration?.coerceAtLeast(0) ?: 0
+            if (transitionFadeEnabled && controller != null) {
+                fadeScope.launch {
+                    val c = controller ?: return@launch
+                    c.volume = 0f
+                    val steps = 12
+                    val delayMs = (transitionFadeMs / steps).coerceAtLeast(10).toLong()
+                    repeat(steps) { step ->
+                        c.volume = (step + 1) / steps.toFloat()
+                        delay(delayMs)
+                    }
+                    c.volume = 1f
+                }
+            }
         }
         override fun onPlaybackStateChanged(playbackState: Int) {
             _duration.value = controller?.duration?.coerceAtLeast(0) ?: 0
@@ -76,7 +98,7 @@ class PlayerManager(private val context: Context) {
         }
     }
 
-    fun playSongs(songs: List<Song>, startIndex: Int = 0) {
+    fun playSongs(songs: List<Song>, startIndex: Int = 0, autoPlay: Boolean = true) {
         if (songs.isEmpty()) return
         songMap = songs.associateBy { it.id.toString() }
         _queue.value = songs
@@ -95,7 +117,7 @@ class PlayerManager(private val context: Context) {
         }
         controller?.setMediaItems(items, startIndex, 0)
         controller?.prepare()
-        controller?.play()
+        if (autoPlay) controller?.play()
         _currentSong.value = songs.getOrNull(startIndex)
     }
 
@@ -130,5 +152,9 @@ class PlayerManager(private val context: Context) {
         controller?.clearMediaItems()
         _queue.value = emptyList()
         _currentSong.value = null
+    }
+
+    fun release() {
+        fadeScope.cancel()
     }
 }
