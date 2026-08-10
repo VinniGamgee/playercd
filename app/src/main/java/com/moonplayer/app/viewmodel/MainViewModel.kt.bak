@@ -137,42 +137,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadLyricsPlaceholder(song: Song) {
         viewModelScope.launch(Dispatchers.IO) {
-            val result = 
-    private fun readEmbeddedLyrics(uri: String): Pair<String, List<TimedLyric>>? {
-    return try {
-        val retriever = MediaMetadataRetriever()
-        val pfd = getApplication<Application>()
-            .contentResolver
-            .openFileDescriptor(Uri.parse(uri), "r")
-
-        if (pfd == null) {
-            retriever.release()
-            return null
+            val result = readEmbeddedLyrics(song.uri)
+            _lyrics.value = result?.first
+            _timedLyrics.value = result?.second ?: emptyList()
         }
-
-        val raw: String? = pfd.use {
-            retriever.setDataSource(it.fileDescriptor)
-            retriever.extractMetadata(32)
-        }
-
-        retriever.release()
-
-        val lyricsText = raw ?: return null
-
-        if (lyricsText.isBlank()) return null
-
-        val timed = parseTimedLyrics(lyricsText)
-        val clean = if (timed.isNotEmpty()) {
-            timed.joinToString("\n") { it.text }
-        } else {
-            lyricsText.trim()
-        }
-
-        clean to timed
-    } catch (_: Exception) {
-        null
     }
-}
 
     private fun readEmbeddedLyrics(uri: String): Pair<String, List<TimedLyric>>? {
         return try {
