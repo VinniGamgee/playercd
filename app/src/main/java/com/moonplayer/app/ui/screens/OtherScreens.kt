@@ -633,15 +633,21 @@ fun PlaylistDetailScreen(
     val list by vm.getPlaylistSongs(playlistId).collectAsState(initial = emptyList())
     val playlists by vm.playlists.collectAsState()
     val name = playlists.find { it.id == playlistId }?.name ?: "Playlist"
+    val selected = remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var showPlaylistDialog by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(name) },
+                title = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) }
                 },
                 actions = {
                     if (list.isNotEmpty()) {
+                        IconButton(onClick = { vm.playPlaylist(list, shuffle = true) }) {
+                            Icon(Icons.Filled.Shuffle, "Aleatório")
+                        }
                         IconButton(onClick = { vm.playPlaylist(list) }) {
                             Icon(Icons.Filled.PlayArrow, "Reproduzir")
                         }
@@ -655,12 +661,75 @@ fun PlaylistDetailScreen(
                 Text("Playlist vazia")
             }
         } else {
-            LazyColumn(Modifier.padding(padding)) {
-                items(list, key = { it.id }) { song ->
-                    SongListItem(song = song, onClick = { onSongClick(song, list) }, onMore = { vm.removeFromPlaylist(playlistId, song.id) })
+            Column(Modifier.fillMaxSize().padding(padding)) {
+                if (selected.value.isNotEmpty()) {
+                    Surface(color = MaterialTheme.colorScheme.primaryContainer) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("${selected.value.size} selecionada(s)", modifier = Modifier.weight(1f))
+                            TextButton(onClick = { showPlaylistDialog = true }) {
+                                Icon(Icons.Filled.QueueMusic, null)
+                                Spacer(Modifier.width(4.dp))
+                                Text("Adicionar")
+                            }
+                            TextButton(onClick = { selected.value = emptySet() }) { Text("Cancelar") }
+                        }
+                    }
+                }
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(vertical = 6.dp)
+                ) {
+                    items(list, key = { it.id }) { song ->
+                        val isSelected = song.id in selected.value
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                            else MaterialTheme.colorScheme.surface
+                        ) {
+                            SongListItem(
+                                song = song,
+                                onClick = {
+                                    if (selected.value.isNotEmpty()) {
+                                        selected.value = if (isSelected) selected.value - song.id else selected.value + song.id
+                                    } else onSongClick(song, list)
+                                },
+                                onLongClick = {
+                                    selected.value = if (isSelected) selected.value - song.id else selected.value + song.id
+                                },
+                                onMore = { vm.removeFromPlaylist(playlistId, song.id) }
+                            )
+                        }
+                    }
                 }
             }
         }
+    }
+
+    if (showPlaylistDialog) {
+        AlertDialog(
+            onDismissRequest = { showPlaylistDialog = false },
+            title = { Text("Adicionar ${selected.value.size} música(s)") },
+            text = {
+                if (playlists.isEmpty()) Text("Crie uma playlist primeiro.")
+                else Column {
+                    playlists.filter { it.id != playlistId }.forEach { playlist ->
+                        ListItem(
+                            headlineContent = { Text(playlist.name) },
+                            leadingContent = { Icon(Icons.Filled.QueueMusic, null) },
+                            modifier = Modifier.clickable {
+                                vm.addSongsToPlaylist(playlist.id, selected.value.toList())
+                                selected.value = emptySet()
+                                showPlaylistDialog = false
+                            }
+                        )
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showPlaylistDialog = false }) { Text("Fechar") } }
+        )
     }
 }
 
@@ -674,10 +743,11 @@ fun FolderDetailScreen(
 ) {
     val allSongs by vm.songs.collectAsState()
     val list = remember(folderPath, allSongs) {
-        allSongs.filter { it.path.startsWith(folderPath) }
+        allSongs.filter { it.path == folderPath || it.path.startsWith("$folderPath/") }
     }
-    val folderName = folderPath.substringAfterLast('/')
+    val folderName = folderPath.substringAfterLast('/').ifBlank { folderPath }
     val playlists by vm.playlists.collectAsState()
+    val selected = remember { mutableStateOf<Set<Long>>(emptySet()) }
     var showPlaylistDialog by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -687,11 +757,9 @@ fun FolderDetailScreen(
                     Column {
                         Text(folderName, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
-                            folderPath,
+                            "${list.size} músicas",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 },
@@ -700,8 +768,8 @@ fun FolderDetailScreen(
                 },
                 actions = {
                     if (list.isNotEmpty()) {
-                        IconButton(onClick = { showPlaylistDialog = true }) {
-                            Icon(Icons.Filled.QueueMusic, "Adicionar à playlist")
+                        IconButton(onClick = { vm.playPlaylist(list, shuffle = true) }) {
+                            Icon(Icons.Filled.Shuffle, "Aleatório")
                         }
                         IconButton(onClick = { vm.playPlaylist(list) }) {
                             Icon(Icons.Filled.PlayArrow, "Tocar pasta")
@@ -716,46 +784,74 @@ fun FolderDetailScreen(
                 Text("Nenhuma música nesta pasta")
             }
         } else {
-            LazyColumn(Modifier.padding(padding)) {
-                item {
-                    Text(
-                        "${list.size} músicas",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(16.dp)
-                    )
+            Column(Modifier.fillMaxSize().padding(padding)) {
+                if (selected.value.isNotEmpty()) {
+                    Surface(color = MaterialTheme.colorScheme.primaryContainer) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("${selected.value.size} selecionada(s)", modifier = Modifier.weight(1f))
+                            TextButton(onClick = { showPlaylistDialog = true }) {
+                                Icon(Icons.Filled.QueueMusic, null)
+                                Spacer(Modifier.width(4.dp))
+                                Text("Playlist")
+                            }
+                            TextButton(onClick = { selected.value = emptySet() }) { Text("Cancelar") }
+                        }
+                    }
                 }
-                items(list, key = { it.id }) { song ->
-                    SongListItem(song = song, onClick = { onSongClick(song, list) })
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(vertical = 6.dp)
+                ) {
+                    items(list, key = { it.id }) { song ->
+                        val isSelected = song.id in selected.value
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                            else MaterialTheme.colorScheme.surface
+                        ) {
+                            SongListItem(
+                                song = song,
+                                onClick = {
+                                    if (selected.value.isNotEmpty()) {
+                                        selected.value = if (isSelected) selected.value - song.id else selected.value + song.id
+                                    } else onSongClick(song, list)
+                                },
+                                onLongClick = {
+                                    selected.value = if (isSelected) selected.value - song.id else selected.value + song.id
+                                }
+                            )
+                        }
+                    }
                 }
             }
         }
     }
+
     if (showPlaylistDialog) {
         AlertDialog(
             onDismissRequest = { showPlaylistDialog = false },
-            title = { Text("Adicionar pasta à playlist") },
+            title = { Text("Adicionar ${selected.value.size} música(s)") },
             text = {
-                if (playlists.isEmpty()) {
-                    Text("Crie uma playlist primeiro.")
-                } else {
-                    Column {
-                        playlists.forEach { playlist ->
-                            ListItem(
-                                headlineContent = { Text(playlist.name) },
-                                supportingContent = { Text("${list.size} músicas serão adicionadas") },
-                                leadingContent = { Icon(Icons.Filled.QueueMusic, null) },
-                                modifier = Modifier.clickable {
-                                    list.forEach { vm.addToPlaylist(playlist.id, it.id) }
-                                    showPlaylistDialog = false
-                                }
-                            )
-                        }
+                if (playlists.isEmpty()) Text("Crie uma playlist primeiro.")
+                else Column {
+                    playlists.forEach { playlist ->
+                        ListItem(
+                            headlineContent = { Text(playlist.name) },
+                            supportingContent = { Text("${selected.value.size} músicas") },
+                            leadingContent = { Icon(Icons.Filled.QueueMusic, null) },
+                            modifier = Modifier.clickable {
+                                vm.addSongsToPlaylist(playlist.id, selected.value.toList())
+                                selected.value = emptySet()
+                                showPlaylistDialog = false
+                            }
+                        )
                     }
                 }
             },
             confirmButton = { TextButton(onClick = { showPlaylistDialog = false }) { Text("Fechar") } }
         )
     }
-
 }

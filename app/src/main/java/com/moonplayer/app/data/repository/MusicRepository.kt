@@ -145,5 +145,9 @@ class MusicRepository(
     suspend fun renamePlaylist(playlist: Playlist) = playlistDao.update(playlist)
     suspend fun deletePlaylist(playlist: Playlist) { playlistDao.clearSongs(playlist.id); playlistDao.delete(playlist) }
     suspend fun addToPlaylist(playlistId: Long, songId: Long) = playlistDao.addSong(PlaylistSong(playlistId, songId))
+    suspend fun addSongsToPlaylist(playlistId: Long, songIds: List<Long>) {
+        if (songIds.isEmpty()) return
+        playlistDao.addSongs(songIds.mapIndexed { index, songId -> PlaylistSong(playlistId, songId, index) })
+    }
     suspend fun removeFromPlaylist(playlistId: Long, songId: Long) = playlistDao.removeSong(playlistId, songId)
 }

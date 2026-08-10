@@ -246,7 +246,14 @@ fun LibraryScreen(
                                         LibraryIcon(Icons.Filled.Folder)
                                     },
                                     trailingContent = {
-                                        Icon(Icons.Filled.ChevronRight, null)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            IconButton(onClick = {
+                                                vm.playPlaylist(vm.songsInFolder(f.path), shuffle = true)
+                                            }) {
+                                                Icon(Icons.Filled.Shuffle, "Aleatório")
+                                            }
+                                            Icon(Icons.Filled.ChevronRight, null)
+                                        }
                                     },
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -361,7 +368,14 @@ private fun PlaylistTab(
                         headlineContent = { Text(p.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         supportingContent = { Text("Toque para abrir") },
                         leadingContent = { LibraryIcon(Icons.Filled.QueueMusic) },
-                        trailingContent = { Icon(Icons.Filled.ChevronRight, null) },
+                        trailingContent = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { vm.shufflePlaylist(p.id) }) {
+                                    Icon(Icons.Filled.Shuffle, "Aleatório")
+                                }
+                                Icon(Icons.Filled.ChevronRight, null)
+                            }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onPlaylistClick(p.id) }

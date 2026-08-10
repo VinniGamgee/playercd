@@ -2,6 +2,9 @@ package com.moonplayer.app.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -257,32 +260,37 @@ fun PlayerScreen(
 @Composable
 fun LyricsScreen(vm: MainViewModel, onBack: () -> Unit) {
     val lyrics by vm.lyrics.collectAsState()
+    val timedLyrics by vm.timedLyrics.collectAsState()
+    val position by vm.player.position.collectAsState()
     val song by vm.player.currentSong.collectAsState()
+    val listState = rememberLazyListState()
+
+    val activeIndex = remember(position, timedLyrics) {
+        timedLyrics.indexOfLast { it.timeMs <= position }
+    }
+
+    LaunchedEffect(activeIndex, timedLyrics.size) {
+        if (activeIndex >= 0 && activeIndex < timedLyrics.size) {
+            listState.animateScrollToItem(activeIndex.coerceAtLeast(0))
+        }
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(song?.title ?: "Letras") },
+                title = { Text(song?.title ?: "Letras", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, null)
-                    }
+                    IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null) }
                 }
             )
         }
     ) { padding ->
-        Box(
-            Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(24.dp)
-        ) {
-            if (lyrics.isNullOrBlank()) {
-                Column(
-                    Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
+        if (lyrics.isNullOrBlank()) {
+            Box(
+                Modifier.fillMaxSize().padding(padding).padding(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
                         Icons.Filled.Lyrics,
                         null,
@@ -290,22 +298,44 @@ fun LyricsScreen(vm: MainViewModel, onBack: () -> Unit) {
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.height(12.dp))
+                    Text("Sem letras embutidas", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(4.dp))
                     Text(
-                        "Sem letras disponíveis",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        "Arquivos com letras embutidas ou LRC\nserão suportados em breve.",
+                        "Esta faixa não possui letras no arquivo.\nLetras online ficam para uma próxima etapa.",
                         textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            } else {
-                Text(
-                    lyrics!!,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+            }
+        } else if (timedLyrics.isNotEmpty()) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentPadding = PaddingValues(horizontal = 28.dp, vertical = 120.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
+            ) {
+                itemsIndexed(timedLyrics) { index, line ->
+                    Text(
+                        text = line.text,
+                        style = if (index == activeIndex) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium,
+                        color = if (index == activeIndex) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (index == activeIndex) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentPadding = PaddingValues(horizontal = 28.dp, vertical = 32.dp)
+            ) {
+                item {
+                    Text(
+                        lyrics!!,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
         }
     }

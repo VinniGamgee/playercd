@@ -1,6 +1,8 @@
 package com.moonplayer.app.viewmodel
 
 import android.app.Application
+import android.media.MediaMetadataRetriever
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.moonplayer.app.data.db.AppDatabase
@@ -41,8 +43,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isScanning = MutableStateFlow(false)
     val isScanning = _isScanning.asStateFlow()
+    data class TimedLyric(val timeMs: Long, val text: String)
+
     private val _lyrics = MutableStateFlow<String?>(null)
     val lyrics = _lyrics.asStateFlow()
+    private val _timedLyrics = MutableStateFlow<List<TimedLyric>>(emptyList())
+    val timedLyrics = _timedLyrics.asStateFlow()
 
     init {
         player.connect()
@@ -76,9 +82,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val idx = list.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
         player.playSongs(list, idx, appSettings.value.autoPlay)
         _lyrics.value = null
+        _timedLyrics.value = emptyList()
     }
-    fun playPlaylist(list: List<Song>) {
-        if (list.isNotEmpty()) { player.playSongs(list, 0, appSettings.value.autoPlay); _lyrics.value = null }
+    fun playPlaylist(list: List<Song>, shuffle: Boolean = false) {
+        if (list.isNotEmpty()) {
+            player.playSongs(list, 0, appSettings.value.autoPlay, shuffle)
+            _lyrics.value = null
+            _timedLyrics.value = emptyList()
+        }
     }
     fun songsInFolder(path: String): List<Song> = songs.value.filter { it.path.startsWith(path) }
     fun toggleFavorite(song: Song) = viewModelScope.launch { repo.setFavorite(song.id, !song.isFavorite) }
@@ -89,8 +100,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
     fun deletePlaylist(playlist: Playlist) = viewModelScope.launch { repo.deletePlaylist(playlist) }
     fun addToPlaylist(playlistId: Long, songId: Long) = viewModelScope.launch { repo.addToPlaylist(playlistId, songId) }
+    fun addSongsToPlaylist(playlistId: Long, songIds: List<Long>) = viewModelScope.launch { repo.addSongsToPlaylist(playlistId, songIds) }
     fun removeFromPlaylist(playlistId: Long, songId: Long) = viewModelScope.launch { repo.removeFromPlaylist(playlistId, songId) }
     fun getPlaylistSongs(id: Long): Flow<List<Song>> = repo.getPlaylistSongs(id)
+    fun shufflePlaylist(id: Long) = viewModelScope.launch { repo.getPlaylistSongs(id).first().let { if (it.isNotEmpty()) playPlaylist(it, shuffle = true) } }
 
     fun setTheme(v: ThemeMode) = viewModelScope.launch { settings.setTheme(v) }
     fun setAccent(v: AccentPreset) = viewModelScope.launch { settings.setAccent(v) }
@@ -122,18 +135,62 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun resetSettings() = viewModelScope.launch { settings.reset() }
 
     fun loadLyricsPlaceholder(song: Song) {
-        _lyrics.value = buildString {
-            appendLine("♪ ${song.title}")
-            appendLine("  ${song.artist}")
-            appendLine()
-            appendLine("Letras embutidas não encontradas neste arquivo.")
-            appendLine()
-            appendLine("Em versões futuras o MoonPlayer buscará")
-            appendLine("letras sincronizadas (LRC) e online.")
-            appendLine()
-            appendLine("Formato: ${song.format}")
-            if (song.duration > 0) appendLine("Duração: ${song.duration / 1000}s")
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = readEmbeddedLyrics(song.uri)
+            _lyrics.value = result?.first
+            _timedLyrics.value = result?.second ?: emptyList()
         }
+    }
+
+    private fun readEmbeddedLyrics(uri: String): Pair<String, List<TimedLyric>>? {
+        return try {
+            val retriever = MediaMetadataRetriever()
+            val pfd = getApplication<Application>().contentResolver.openFileDescriptor(Uri.parse(uri), "r")
+            if (pfd == null) {
+                retriever.release()
+                return null
+            }
+            val raw = pfd.use {
+                retriever.setDataSource(it.fileDescriptor)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_LYRICS)
+            }
+            retriever.release()
+            if (raw.isNullOrBlank()) return null
+
+            val timed = parseTimedLyrics(raw)
+            val clean = if (timed.isNotEmpty()) timed.joinToString("\n") { it.text } else raw.trim()
+            clean to timed
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun parseTimedLyrics(raw: String): List<TimedLyric> {
+        val regex = Regex("\\[(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?\\](.*)")
+        val result = mutableListOf<TimedLyric>()
+        raw.lineSequence().forEach { line ->
+            regex.findAll(line).forEach { match ->
+                val minutes = match.groupValues[1].toLongOrNull()
+                val seconds = match.groupValues[2].toLongOrNull()
+                if (minutes != null && seconds != null) {
+                    val fraction = match.groupValues[3]
+                    val fractionMs = when (fraction.length) {
+                        1 -> (fraction.toLongOrNull() ?: 0L) * 100
+                        2 -> (fraction.toLongOrNull() ?: 0L) * 10
+                        3 -> fraction.toLongOrNull() ?: 0L
+                        else -> 0L
+                    }
+                    val text = match.groupValues[4].trim()
+                    if (text.isNotEmpty()) {
+                        result += TimedLyric(
+                            minutes * 60_000 + seconds * 1_000 + fractionMs,
+                            text
+                        )
+                    }
+                }
+            }
+        }
+        return result.sortedBy { it.timeMs }
     }
 
     override fun onCleared() { player.release(); player.disconnect(); super.onCleared() }

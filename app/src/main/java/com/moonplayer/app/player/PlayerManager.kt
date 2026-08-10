@@ -98,7 +98,7 @@ class PlayerManager(private val context: Context) {
         }
     }
 
-    fun playSongs(songs: List<Song>, startIndex: Int = 0, autoPlay: Boolean = true) {
+    fun playSongs(songs: List<Song>, startIndex: Int = 0, autoPlay: Boolean = true, shuffle: Boolean = false) {
         if (songs.isEmpty()) return
         songMap = songs.associateBy { it.id.toString() }
         _queue.value = songs
@@ -116,6 +116,7 @@ class PlayerManager(private val context: Context) {
                 .build()
         }
         controller?.setMediaItems(items, startIndex, 0)
+        controller?.shuffleModeEnabled = shuffle
         controller?.prepare()
         if (autoPlay) controller?.play()
         _currentSong.value = songs.getOrNull(startIndex)

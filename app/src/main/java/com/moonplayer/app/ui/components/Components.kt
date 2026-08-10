@@ -101,6 +101,7 @@ fun AlbumArt(song: Song, size: Dp, modifier: Modifier = Modifier, corner: Dp = 1
 }
 
 @OptIn(ExperimentalFoundationApi::class)
+@Suppress("EXPERIMENTAL_API_USAGE")
 @Composable
 fun SongListItem(
     song: Song,
