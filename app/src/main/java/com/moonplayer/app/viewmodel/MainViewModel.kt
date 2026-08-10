@@ -10,6 +10,7 @@ import com.moonplayer.app.data.model.*
 import com.moonplayer.app.data.preferences.*
 import com.moonplayer.app.data.repository.MusicRepository
 import com.moonplayer.app.player.PlayerManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -152,7 +153,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             val raw = pfd.use {
                 retriever.setDataSource(it.fileDescriptor)
-                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_LYRICS)
+                null
             }
             retriever.release()
             if (raw.isNullOrBlank()) return null
