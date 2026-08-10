@@ -36,9 +36,9 @@ class MusicRepository(
         fun excluded(song: Song) = excludes.any { under(song.path, it) }
         val filtered = songs.filter { included(it) && !excluded(it) }
         return when (cfg.librarySort) {
-            LibrarySort.TITLE -> filtered.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
-            LibrarySort.ARTIST -> filtered.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.artist }.thenBy { it.album }.thenBy { it.trackNumber })
-            LibrarySort.ALBUM -> filtered.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.album }.thenBy { it.trackNumber }.thenBy { it.title })
+            LibrarySort.TITLE -> filtered.sortedWith(compareBy<Song> { it.title.lowercase() })
+            LibrarySort.ARTIST -> filtered.sortedWith(compareBy<Song> { it.artist.lowercase() }.thenBy { it.album.lowercase() }.thenBy { it.trackNumber })
+            LibrarySort.ALBUM -> filtered.sortedWith(compareBy<Song> { it.album.lowercase() }.thenBy { it.trackNumber }.thenBy { it.title.lowercase() })
             LibrarySort.DATE_ADDED -> filtered.sortedByDescending { it.dateAdded }
             LibrarySort.DURATION -> filtered.sortedByDescending { it.duration }
         }
@@ -133,7 +133,7 @@ class MusicRepository(
                     }
                 }
                 songDao.clearAll()
-                if (songs.isNotEmpty()) songDao.insertAll(songs)
+                if (songs.isNotEmpty()) { songDao.insertAll(songs) } else { Unit }
             } catch (e: Exception) {
                 Log.e("MusicRepository", "Scan failed", e)
             }

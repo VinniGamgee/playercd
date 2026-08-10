@@ -278,12 +278,22 @@ fun SettingsScreen(vm: MainViewModel) {
         "sort" -> ChoiceDialog("Ordenar biblioteca", LibrarySort.values().map { it to sortLabel(it) }, cfg.librarySort, { vm.setLibrarySort(it) }) { dialog = null }
         "corner" -> NumberDialog("Arredondamento", cfg.cornerRadius, 4, 28, "dp", { vm.setCornerRadius(it) }) { dialog = null }
         "crossfade" -> NumberDialog("Duração do crossfade", cfg.crossfadeMs, 200, 3000, "ms", { vm.setCrossfadeMs(it) }) { dialog = null }
-        "include" -> FolderRulesDialog("Pastas monitoradas", includes, "Adicionar pasta") {
-            includePicker.launch(null)
-        } { path -> vm.removeIncludePath(path) } { dialog = null }
-        "exclude" -> FolderRulesDialog("Pastas ignoradas", excludes, "Ignorar pasta") {
-            excludePicker.launch(null)
-        } { path -> vm.removeExcludePath(path) } { dialog = null }
+        "include" -> FolderRulesDialog(
+            title = "Pastas monitoradas",
+            paths = includes,
+            addLabel = "Adicionar pasta",
+            onAdd = { includePicker.launch(null) },
+            onRemove = { path -> vm.removeIncludePath(path) },
+            onClose = { dialog = null }
+        )
+        "exclude" -> FolderRulesDialog(
+            title = "Pastas ignoradas",
+            paths = excludes,
+            addLabel = "Ignorar pasta",
+            onAdd = { excludePicker.launch(null) },
+            onRemove = { path -> vm.removeExcludePath(path) },
+            onClose = { dialog = null }
+        )
     }
 
     if (showCreatePlaylist) {
