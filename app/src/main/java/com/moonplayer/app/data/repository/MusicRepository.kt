@@ -44,40 +44,40 @@ class MusicRepository(
         }
     }
 
-    val allSongs: Flow<List<Song>> = combine(
+    private val allSongsFlow: Flow<List<Song>> = combine(
         songDao.getAllSongs(),
         settings.settings,
         settings.includePaths,
         settings.excludePaths
     ) { songs, cfg, includes, excludes -> applyLibraryRules(songs, cfg, includes, excludes) }
 
-    fun getAllSongs(): Flow<List<Song>> = allSongs
-    fun getFavorites(): Flow<List<Song>> = combine(allSongs, settings.settings) { songs, _ -> songs.filter { it.isFavorite } }
-    fun search(query: String): Flow<List<Song>> = allSongs.map { songs ->
+    fun getAllSongs(): Flow<List<Song>> = allSongsFlow
+    fun getFavorites(): Flow<List<Song>> = combine(allSongsFlow, settings.settings) { songs, _ -> songs.filter { it.isFavorite } }
+    fun search(query: String): Flow<List<Song>> = allSongsFlow.map { songs ->
         songs.filter {
             it.title.contains(query, true) || it.artist.contains(query, true) || it.album.contains(query, true)
         }
     }
-    fun getByArtist(artist: String): Flow<List<Song>> = allSongs.map { it.filter { s -> s.artist == artist } }
-    fun getByAlbum(albumId: Long): Flow<List<Song>> = allSongs.map { it.filter { s -> s.albumId == albumId } }
-    fun getByFolder(path: String): Flow<List<Song>> = allSongs.map { it.filter { s -> s.path.startsWith(path) } }
+    fun getByArtist(artist: String): Flow<List<Song>> = allSongsFlow.map { it.filter { s -> s.artist == artist } }
+    fun getByAlbum(albumId: Long): Flow<List<Song>> = allSongsFlow.map { it.filter { s -> s.albumId == albumId } }
+    fun getByFolder(path: String): Flow<List<Song>> = allSongsFlow.map { it.filter { s -> s.path.startsWith(path) } }
     fun getPlaylists(): Flow<List<Playlist>> = playlistDao.getAll()
     fun getPlaylistSongs(id: Long): Flow<List<Song>> = playlistDao.getSongs(id)
 
-    fun getArtists(): Flow<List<Artist>> = allSongs.map { songs ->
+    fun getArtists(): Flow<List<Artist>> = allSongsFlow.map { songs ->
         songs.groupBy { it.artist }.map { (name, list) ->
             Artist(name, list.size, list.map { it.albumId }.distinct().size)
         }.sortedBy { it.name.lowercase() }
     }
 
-    fun getAlbums(): Flow<List<Album>> = allSongs.map { songs ->
+    fun getAlbums(): Flow<List<Album>> = allSongsFlow.map { songs ->
         songs.groupBy { it.albumId }.map { (id, list) ->
             val first = list.first()
             Album(id, first.album, first.artist, list.size, first.year)
         }.sortedBy { it.name.lowercase() }
     }
 
-    fun getFolders(): Flow<List<Folder>> = allSongs.map { songs ->
+    fun getFolders(): Flow<List<Folder>> = allSongsFlow.map { songs ->
         songs.groupBy { it.path.substringBeforeLast('/') }.map { (path, list) ->
             Folder(path, path.substringAfterLast('/'), list.size)
         }.sortedBy { it.name.lowercase() }
