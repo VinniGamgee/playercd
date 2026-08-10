@@ -11,6 +11,7 @@ import com.moonplayer.app.data.preferences.*
 import com.moonplayer.app.data.repository.MusicRepository
 import com.moonplayer.app.player.PlayerManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -145,25 +146,167 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun readEmbeddedLyrics(uri: String): Pair<String, List<TimedLyric>>? {
         return try {
-            val retriever = MediaMetadataRetriever()
-            val pfd = getApplication<Application>().contentResolver.openFileDescriptor(Uri.parse(uri), "r")
-            if (pfd == null) {
-                retriever.release()
-                return null
-            }
-            val raw = pfd.use {
-                retriever.setDataSource(it.fileDescriptor)
-                null
-            }
-            retriever.release()
-            if (raw.isNullOrBlank()) return null
+            val resolver = getApplication<Application>().contentResolver
+            val input = resolver.openInputStream(Uri.parse(uri)) ?: return null
+            val bytes = input.use { it.readBytes() }
 
-            val timed = parseTimedLyrics(raw)
-            val clean = if (timed.isNotEmpty()) timed.joinToString("\n") { it.text } else raw.trim()
-            clean to timed
+            val extracted = extractEmbeddedLyrics(bytes) ?: return null
+            val timed = parseTimedLyrics(extracted)
+            val clean = if (timed.isNotEmpty()) {
+                timed.joinToString("\n") { it.text }
+            } else {
+                extracted.trim()
+            }
+            if (clean.isBlank()) null else clean to timed
         } catch (_: Exception) {
             null
         }
+    }
+
+    /**
+     * Reads common embedded lyrics from ID3v2 MP3 tags.
+     *
+     * USLT = unsynchronised lyrics.
+     * SYLT = synchronised lyrics.  SYLT is converted to LRC-like lines so
+     * parseTimedLyrics() can expose the timestamps to the UI.
+     */
+    private fun extractEmbeddedLyrics(bytes: ByteArray): String? {
+        if (bytes.size < 10) return null
+        if (bytes[0] != 'I'.code.toByte() ||
+            bytes[1] != 'D'.code.toByte() ||
+            bytes[2] != '3'.code.toByte()
+        ) return null
+
+        val version = bytes[3].toInt() and 0xFF
+        if (version < 2 || version > 4) return null
+
+        val tagSize = synchsafeInt(bytes, 6)
+        val tagEnd = minOf(bytes.size, 10 + tagSize)
+        var pos = 10
+        val lyrics = mutableListOf<String>()
+
+        while (pos + 10 <= tagEnd) {
+            val id = String(bytes, pos, 4, Charsets.ISO_8859_1)
+            val frameSize = if (version == 4) {
+                synchsafeInt(bytes, pos + 4)
+            } else {
+                int32(bytes, pos + 4)
+            }
+
+            if (id.all { it == '\u0000' } || frameSize <= 0) break
+            val dataStart = pos + 10
+            val dataEnd = dataStart + frameSize
+            if (dataEnd > tagEnd) break
+
+            val frame = bytes.copyOfRange(dataStart, dataEnd)
+            when (id) {
+                "USLT" -> parseUsltFrame(frame)?.let { lyrics += it }
+                "SYLT" -> parseSyltFrame(frame)?.let { lyrics += it }
+            }
+            pos = dataEnd
+        }
+
+        return lyrics.joinToString("\n").trim().ifBlank { null }
+    }
+
+    private fun parseUsltFrame(frame: ByteArray): String? {
+        if (frame.size < 4) return null
+        val encoding = frame[0].toInt() and 0xFF
+        var pos = 4 // encoding + 3-byte language
+        val terminatorSize = if (encoding == 1 || encoding == 2) 2 else 1
+
+        while (pos + terminatorSize <= frame.size) {
+            val isEnd = if (terminatorSize == 2) {
+                frame[pos] == 0.toByte() && frame[pos + 1] == 0.toByte()
+            } else {
+                frame[pos] == 0.toByte()
+            }
+            if (isEnd) {
+                pos += terminatorSize
+                break
+            }
+            pos++
+        }
+
+        return decodeText(frame.copyOfRange(pos, frame.size), encoding).trim().ifBlank { null }
+    }
+
+    private fun parseSyltFrame(frame: ByteArray): String? {
+        if (frame.size < 7) return null
+        val encoding = frame[0].toInt() and 0xFF
+        var pos = 6 // encoding + language + timestamp format + content type
+
+        // Content descriptor, null terminated.
+        val descriptorEnd = findTerminator(frame, pos, encoding)
+        if (descriptorEnd < 0) return null
+        pos = descriptorEnd + if (encoding == 1 || encoding == 2) 2 else 1
+
+        val lines = mutableListOf<String>()
+        val terminatorSize = if (encoding == 1 || encoding == 2) 2 else 1
+
+        while (pos < frame.size) {
+            val textStart = pos
+            val textEnd = findTerminator(frame, textStart, encoding)
+            if (textEnd < 0) break
+
+            val text = decodeText(frame.copyOfRange(textStart, textEnd), encoding).trim()
+            pos = textEnd + terminatorSize
+            if (pos + 4 > frame.size) break
+
+            val timestamp = ((frame[pos].toLong() and 0xFF) shl 24) or
+                    ((frame[pos + 1].toLong() and 0xFF) shl 16) or
+                    ((frame[pos + 2].toLong() and 0xFF) shl 8) or
+                    (frame[pos + 3].toLong() and 0xFF)
+            pos += 4
+
+            if (text.isNotBlank()) {
+                // SYLT timestamps are normally milliseconds when timestamp format = 2.
+                // If a file uses MPEG frames (format = 1), this still safely falls back
+                // to the raw lyric text instead of crashing the player.
+                lines += "[${timestamp / 60000}:${((timestamp / 1000) % 60).toString().padStart(2, '0')}.${(timestamp % 1000).toString().padStart(3, '0')}]$text"
+            }
+        }
+
+        return lines.joinToString("\n").ifBlank { null }
+    }
+
+    private fun findTerminator(data: ByteArray, start: Int, encoding: Int): Int {
+        val step = if (encoding == 1 || encoding == 2) 2 else 1
+        var i = start
+        while (i + step <= data.size) {
+            if (step == 1) {
+                if (data[i] == 0.toByte()) return i
+            } else if (data[i] == 0.toByte() && data[i + 1] == 0.toByte()) {
+                return i
+            }
+            i += step
+        }
+        return -1
+    }
+
+    private fun decodeText(data: ByteArray, encoding: Int): String {
+        return when (encoding) {
+            1 -> String(data, Charsets.UTF_16)
+            2 -> String(data, Charsets.UTF_16BE)
+            3 -> String(data, Charsets.UTF_8)
+            else -> String(data, Charsets.ISO_8859_1)
+        }
+    }
+
+    private fun synchsafeInt(data: ByteArray, offset: Int): Int {
+        if (offset + 4 > data.size) return 0
+        return ((data[offset].toInt() and 0x7F) shl 21) or
+                ((data[offset + 1].toInt() and 0x7F) shl 14) or
+                ((data[offset + 2].toInt() and 0x7F) shl 7) or
+                (data[offset + 3].toInt() and 0x7F)
+    }
+
+    private fun int32(data: ByteArray, offset: Int): Int {
+        if (offset + 4 > data.size) return 0
+        return ((data[offset].toInt() and 0xFF) shl 24) or
+                ((data[offset + 1].toInt() and 0xFF) shl 16) or
+                ((data[offset + 2].toInt() and 0xFF) shl 8) or
+                (data[offset + 3].toInt() and 0xFF)
     }
 
     private fun parseTimedLyrics(raw: String): List<TimedLyric> {
